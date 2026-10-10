@@ -30,6 +30,7 @@ def export_glb(ship, path: str) -> str:
         use_selection=True,
         export_apply=True,
         export_yup=True,
+        export_extras=True,  # custom properties: root["shipgen"] holds params summary + stats
     )
     return path
 
@@ -82,11 +83,15 @@ def fit_distance(rot, points, center: Vector, tan_h: float, tan_v: float, margin
 VIEWS = ("three_quarter", "top")
 
 
-def setup_preview(ship, view: str = "three_quarter", resolution=(960, 540), samples: int = 16) -> bpy.types.Object:
+def setup_preview(
+    ship, view: str = "three_quarter", resolution=(960, 540), samples: int = 16, frame: float | None = None
+) -> bpy.types.Object:
     """Add camera + lights framing the ship and configure Cycles on the CPU.
 
     ``view``: "three_quarter" (perspective, front right above) or "top"
     (orthographic, nose pointing right; for judging silhouettes).
+    ``frame``: frame a fixed length in metres instead of fitting the ship, so
+    ships of different sizes render at the same scale (shop lineups).
     """
     _clear_preview()
     scene = bpy.context.scene
@@ -95,6 +100,9 @@ def setup_preview(ship, view: str = "three_quarter", resolution=(960, 540), samp
 
     lo, hi = ship.bounds()
     center = (lo + hi) / 2
+    if frame:  # a fixed virtual box around the ship's centre
+        half = Vector((0.15, 0.5, 0.08)) * frame
+        lo, hi = center - half, center + half
     radius = max((hi - lo).length / 2, 0.1)
 
     cam_data = bpy.data.cameras.new("ShipGen_Camera")
@@ -169,9 +177,11 @@ def _has_oidn() -> bool:
         return False
 
 
-def render_preview(ship, path: str, view: str = "three_quarter", resolution=(960, 540), samples: int = 16) -> str:
+def render_preview(
+    ship, path: str, view: str = "three_quarter", resolution=(960, 540), samples: int = 16, frame: float | None = None
+) -> str:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    setup_preview(ship, view=view, resolution=resolution, samples=samples)
+    setup_preview(ship, view=view, resolution=resolution, samples=samples, frame=frame)
     scene = bpy.context.scene
     scene.render.filepath = os.path.abspath(path)
     bpy.ops.render.render(write_still=True)
@@ -187,6 +197,7 @@ def export_all(
     views=VIEWS,
     resolution=(960, 540),
     samples: int = 16,
+    frame: float | None = None,
 ) -> dict[str, str]:
     """Write ``<name>.glb``, ``<name>.blend`` and one PNG per view into ``out_dir``:
     ``<name>.png`` (three-quarter) and ``<name>_top.png``. Pass ``views=()`` to skip rendering."""
@@ -197,7 +208,8 @@ def export_all(
         key = "png" if view == "three_quarter" else f"png_{view}"
         suffix = "" if view == "three_quarter" else f"_{view}"
         paths[key] = render_preview(
-            ship, os.path.join(out_dir, name + suffix + ".png"), view=view, resolution=resolution, samples=samples
+            ship, os.path.join(out_dir, name + suffix + ".png"), view=view, resolution=resolution, samples=samples,
+            frame=frame,
         )
     if blend:  # last, so the .blend also contains the preview camera and lights
         paths["blend"] = save_blend(os.path.join(out_dir, name + ".blend"))

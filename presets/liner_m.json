@@ -1,0 +1,42 @@
+{
+  "seed": 206,
+  "class": "shuttle",
+  "hull": {
+    "length": 30,
+    "width_ratio": 0.3,
+    "height_ratio": 0.8,
+    "segments": 6,
+    "taper": 0.1,
+    "nose_sharpness": 0.4,
+    "squareness": 0.4,
+    "variation": 0.2
+  },
+  "wings": {
+    "type": "swept",
+    "count": 2,
+    "span": 22.0,
+    "sweep_deg": 30
+  },
+  "engines": {
+    "count": 3,
+    "size": 2.4,
+    "glow_color": "#66ccff"
+  },
+  "mining": {
+    "type": "none",
+    "count": 2,
+    "size": 0.5
+  },
+  "cargo": {
+    "type": "habitat",
+    "modules": 6,
+    "size": 0.45
+  },
+  "greeble_density": 0.4,
+  "symmetry": true,
+  "style": {
+    "palette": "white_red",
+    "wear": 0.1
+  },
+  "max_tris": 20000
+}

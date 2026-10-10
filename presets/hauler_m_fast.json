@@ -1,0 +1,42 @@
+{
+  "seed": 203,
+  "class": "freighter",
+  "hull": {
+    "length": 28,
+    "width_ratio": 0.26,
+    "height_ratio": 0.8,
+    "segments": 6,
+    "taper": 0.3,
+    "nose_sharpness": 0.4,
+    "squareness": 0.6,
+    "variation": 0.3
+  },
+  "wings": {
+    "type": "none",
+    "count": 0,
+    "span": 0.0,
+    "sweep_deg": 0
+  },
+  "engines": {
+    "count": 4,
+    "size": 3.0,
+    "glow_color": "#66ccff"
+  },
+  "mining": {
+    "type": "none",
+    "count": 2,
+    "size": 0.5
+  },
+  "cargo": {
+    "type": "containers",
+    "modules": 2,
+    "size": 0.5
+  },
+  "greeble_density": 0.4,
+  "symmetry": true,
+  "style": {
+    "palette": "navy",
+    "wear": 0.2
+  },
+  "max_tris": 20000
+}

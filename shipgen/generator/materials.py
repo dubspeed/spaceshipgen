@@ -7,6 +7,7 @@ import bpy
 
 # palette name -> (hull, accent) as linear-ish sRGB tuples
 PALETTE_COLORS = {
+    "industrial_yellow": ((0.72, 0.5, 0.06), (0.12, 0.12, 0.13)),
     "military_grey": ((0.32, 0.34, 0.36), (0.55, 0.45, 0.12)),
     "white_red": ((0.85, 0.85, 0.83), (0.7, 0.06, 0.05)),
     "desert": ((0.62, 0.5, 0.34), (0.3, 0.22, 0.14)),
@@ -48,6 +49,7 @@ def create_materials(params: dict) -> dict[str, bpy.types.Material]:
     return {
         "hull": _principled("Hull", hull_color, 0.5 - 0.3 * wear, 0.3 + 0.5 * wear),
         "accent": _principled("Accent", accent_color, 0.3, 0.4 + 0.3 * wear),
+        "cargo": _principled("Cargo", tuple(0.35 + 0.4 * c for c in hull_color), 0.2, 0.5 + 0.3 * wear),
         "glow": _principled("Glow", (0.0, 0.0, 0.0), 0.0, 0.5, emission=hex_to_rgb(params["engines"]["glow_color"])),
     }
 

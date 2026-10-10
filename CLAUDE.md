@@ -1,6 +1,7 @@
 # ShipGen
 
-Procedural low-poly spaceship generator for Blender. Core idea: `generator.generate(params) -> Ship`
+Procedural low-poly spaceship generator for Blender, producing ships for a Godot game about
+asteroid mining, freight and transport (combat exists but is secondary). Core idea: `generator.generate(params) -> Ship`
 is a pure function of a validated parameter dict, independent of any UI. Three front-ends use it:
 the extension panel (`shipgen/ui.py`), the headless CLI (`cli.py`) and, later, the AI prompt
 (`shipgen/ai_prompt.py`, which will only produce parameter JSON).
@@ -13,6 +14,25 @@ the extension panel (`shipgen/ui.py`), the headless CLI (`cli.py`) and, later, t
   freighter = brick of stepped modules, corvette = long hull, shuttle = stubby van.
   `Ship.stats()["top_view"]` measures it (`fill` = silhouette area / bounding rectangle);
   `test_classes_have_distinct_top_silhouettes` guards it. Check top renders after shape changes.
+
+## Gameplay stats (geometry is the source of truth)
+
+`shipgen/stats.py` derives stats from the generated meshes, never from the parameters directly:
+mass from part volumes × density, thrust from glowing nozzle area, acceleration and turn rate
+from both, hull HP from hull surface × class armor, cargo from module volumes (containers →
+`general_m3`, hoppers → `ore_m3`, tanks → `fluid_m3`, habitat → `passengers`) plus the class's
+internal hold, mining power = per-type efficiency × rig volume^(2/3), calibrated so a medium
+rig (size 0.5, count 2 on `miner_m`) gives ~100. Units are physical-ish; the game balances with
+its own multipliers. Stats go into the CLI JSON and the glTF extras (`root["shipgen"]`).
+When changing shapes, check `scripts/stats_table.py` output for unintended stat shifts, and
+recalibrate `MINING_EFFICIENCY` if rig geometry changes (`test_mining_rigs` guards it).
+
+## Shop lineup
+
+Presets are the ship models a player can buy: size tiers × loadouts (`miner_s/m/l`,
+`miner_m_hauler`, `miner_gas`, `hauler_s/m/l`, `hauler_m_fast`, `tanker_m`, `liner_m`) plus
+combat/generic ones. The seed only changes the look within a model. Every preset must
+generate without warnings (`test_presets_generate_cleanly`).
 
 ## Blender versions
 
@@ -32,9 +52,11 @@ the extension panel (`shipgen/ui.py`), the headless CLI (`cli.py`) and, later, t
 - `shipgen/params.py` – schema (type, default, min/max, choices) + `validate()`. Pure Python,
   no `bpy`. `validate()` never raises on bad values: it clamps/replaces and returns warnings.
   Add every new parameter here first; the UI and `json_schema()` derive from it.
-- `shipgen/generator/` – `__init__.py` (`generate`, `Ship`, `clear`), `hull.py` (class profiles,
-  `HullShape` that other parts attach to), `wings.py`, `engines.py`, `materials.py`.
-  Planned: `greebles.py`.
+- `shipgen/generator/` – `__init__.py` (`generate`, `Ship`, `clear`), `hull.py` (class profiles
+  incl. cargo zone / hold / armor, `HullShape` that other parts attach to), `wings.py`,
+  `engines.py`, `mining.py` (nose rigs), `cargo.py` (modules in symmetric lanes),
+  `shapes.py` (low-poly primitives), `materials.py`. Planned: `greebles.py`.
+- `shipgen/stats.py` – gameplay stats from geometry (see above).
 - `shipgen/metrics.py` – top-view silhouette metrics (numpy rasteriser).
 - `shipgen/export.py` – `.glb`, `.blend`, Cycles previews (`three_quarter` and orthographic `top`).
 - `shipgen/ui.py` – sidebar panel "ShipGen"; properties generated from the schema
@@ -51,15 +73,20 @@ the extension panel (`shipgen/ui.py`), the headless CLI (`cli.py`) and, later, t
 - Randomness: one `random.Random(f"{seed}:<part>")` per part, so changing one part never
   changes the shapes of other parts for the same seed.
 - Triangle budget: the hull uses at most `HULL_TRI_SHARE` (60 %) of `max_tris` and falls back
-  to its class keyframes; engines get what is left (count reduced, with a warning).
+  to its class keyframes; then wings and mining rig; engines and finally cargo modules get what
+  is left (counts reduced, with a warning). Modules that don't fit the cargo zone are dropped
+  with a warning too.
   Tests enforce `tris <= max_tris`.
 - Every part is a closed, manifold mesh without zero-area faces; mirror symmetric when
   `symmetry` is on. Fan n-gon caps from their centre (`bmesh.ops.poke`) instead of
   triangulating them, since boxy sections have collinear points.
+- Each part object carries `shipgen_role` (hull, wings, engines, mining, cargo); stats look
+  parts up by it.
 - Everything a ship creates lives in the `ShipGen` collection under the `Ship` empty;
   materials are prefixed `ShipGen_`. `generate()` replaces the previous ship.
 - Materials: plain Principled values only (no linked textures), so the glTF matches.
-- `output/` and `dist/` are git-ignored. Commit presets and, occasionally, `docs/renders/gallery.png`.
+- `output/` and `dist/` are git-ignored. Commit presets and, occasionally, the sheets in
+  `docs/renders/` and `docs/shop_stats.md`.
 
 ## Commands
 
@@ -74,6 +101,9 @@ scripts/setup_env.sh                       # once (the hook does this in cloud s
 # compare silhouettes: render top views, tile them
 .venv/bin/python cli.py --preset freighter --seeds 1-6 --views top --no-glb --no-blend --out /tmp/s
 .venv/bin/python scripts/contact_sheet.py /tmp/s/sheet.png --cols 3 /tmp/s/*_top.png
+# shop lineup at one scale + stats table
+.venv/bin/python cli.py --preset all --frame 64 --no-glb --no-blend --out /tmp/l
+python3 scripts/stats_table.py /tmp/l/*.json
 # installable extension zip -> dist/
 python3 scripts/build_extension.py
 ```

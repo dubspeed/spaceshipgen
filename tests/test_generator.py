@@ -37,6 +37,8 @@ def random_params(seed: int) -> dict:
     }
     p["engines"]["count"] = rng.randint(0, 8)
     p["engines"]["size"] = length * rng.uniform(0.03, 0.2)
+    p["mining"] = {"type": rng.choice(params.MINING_TYPES), "count": rng.randint(1, 4), "size": rng.random()}
+    p["cargo"] = {"type": rng.choice(params.CARGO_TYPES), "modules": rng.randint(0, 24), "size": rng.random()}
     return params.validate(p).params
 
 
@@ -64,7 +66,7 @@ class GeneratorTest(unittest.TestCase):
             with self.subTest(seed=seed, cls=p["class"]):
                 ship = self.generator.generate(p)
                 stats = ship.stats()
-                self.assertEqual(ship.warnings, [])
+                self.assertTrue(all("reduced" in w for w in ship.warnings), ship.warnings)
 
                 # triangle budget
                 self.assertGreater(stats["tris"], 0)
@@ -77,7 +79,7 @@ class GeneratorTest(unittest.TestCase):
                 dx, dy, dz = stats["dimensions"]
                 self.assertGreater(dx, 0.02 * length)
                 self.assertLess(dx, 3.0 * length)
-                self.assertLess(dy, 1.6 * length)
+                self.assertLess(dy, 2.6 * length)  # rig at the nose + engines at the tail
                 self.assertGreater(dz, 0.01 * length)
                 self.assertLess(dz, 2.0 * length)
 
@@ -136,6 +138,74 @@ class GeneratorTest(unittest.TestCase):
             self.assertLess(max(fill["interceptor"]), 0.45)
             self.assertGreater(min(fill["freighter"]), 0.7)
 
+    def test_mining_rigs(self):
+        base = silhouette_params("miner_m", 1)
+        for kind in ("drill", "laser", "claw", "scoop"):
+            p = dict(base, mining=dict(base["mining"], type=kind, count=2, size=0.5))
+            with self.subTest(kind=kind):
+                ship = self.generator.generate(p)
+                self.assertIn("Ship_Mining", [o.name for o in ship.parts])
+                mining = ship.gameplay["mining"]
+                self.assertEqual(mining["type"], kind)
+                self.assertAlmostEqual(mining["power"], 100, delta=15)  # calibrated medium rig
+                self.assertGreater(mining["range_m"], 0)
+
+    def test_bigger_rig_mines_more(self):
+        base = silhouette_params("miner_m", 1)
+        power = [
+            self.generator.generate(dict(base, mining=dict(base["mining"], size=size))).gameplay["mining"]["power"]
+            for size in (0.2, 0.5, 0.8)
+        ]
+        self.assertEqual(power, sorted(power))
+        self.assertGreater(power[0], 0)
+
+    def test_cargo_types_fill_their_kind(self):
+        expected = {"containers": "general_m3", "hoppers": "ore_m3", "tanks": "fluid_m3", "habitat": "passengers"}
+        base = silhouette_params("freighter", 1)
+        hold_only = self.generator.generate(base).gameplay["cargo"]
+        for kind, key in expected.items():
+            with self.subTest(kind=kind):
+                ship = self.generator.generate(dict(base, cargo={"type": kind, "modules": 6, "size": 0.5}))
+                self.assertEqual(ship.warnings, [])
+                self.assertGreater(ship.gameplay["cargo"][key], hold_only[key])
+
+    def test_more_modules_more_cargo_but_slower(self):
+        base = silhouette_params("hauler_m", 1)
+        ships = [
+            self.generator.generate(dict(base, cargo=dict(base["cargo"], modules=n))).gameplay for n in (0, 4, 8)
+        ]
+        cargo = [g["cargo"]["general_m3"] for g in ships]
+        accel = [g["acceleration_ms2"] for g in ships]
+        self.assertEqual(cargo, sorted(cargo))
+        self.assertEqual(accel, sorted(accel, reverse=True))
+        self.assertGreater(cargo[2], cargo[0])
+
+    def test_bigger_engines_accelerate_faster(self):
+        base = silhouette_params("hauler_m", 1)
+        accel = [
+            self.generator.generate(dict(base, engines=dict(base["engines"], size=size))).gameplay["acceleration_ms2"]
+            for size in (1.5, 3.0, 4.5)
+        ]
+        self.assertEqual(accel, sorted(accel))
+
+    def test_miner_hold_carries_ore(self):
+        cargo = self.generator.generate(silhouette_params("miner_s", 1)).gameplay["cargo"]
+        self.assertGreater(cargo["ore_m3"], 0)
+        self.assertEqual(cargo["general_m3"], 0)
+
+    def test_too_many_modules_are_reduced_with_warning(self):
+        p = silhouette_params("hauler_s", 1)
+        p["cargo"] = {"type": "tanks", "modules": 24, "size": 1.0}
+        ship = self.generator.generate(p)
+        self.assertTrue(any(w.startswith("cargo.modules reduced") for w in ship.warnings), ship.warnings)
+
+    def test_presets_generate_cleanly(self):
+        for name in sorted(os.listdir(os.path.join(ROOT, "presets"))):
+            with self.subTest(preset=name):
+                ship = self.generator.generate(params.load(os.path.join(ROOT, "presets", name)).params)
+                self.assertEqual(ship.warnings, [])
+                self.assertLessEqual(ship.stats()["tris"], ship.params["max_tris"])
+
     def test_low_budget_stays_within_max_tris(self):
         for cls in params.SHIP_CLASSES:
             p = dict(params.defaults(), max_tris=500)
@@ -143,6 +213,8 @@ class GeneratorTest(unittest.TestCase):
             p["hull"] = dict(p["hull"], segments=16)
             p["engines"] = dict(p["engines"], count=8)
             p["wings"] = dict(p["wings"], count=6)
+            p["mining"] = {"type": "claw", "count": 4, "size": 1.0}
+            p["cargo"] = {"type": "habitat", "modules": 24, "size": 0.3}
             with self.subTest(cls=cls):
                 self.assertLessEqual(self.generator.generate(p).stats()["tris"], 500)
 

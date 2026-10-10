@@ -29,8 +29,9 @@ def main(argv: list[str]) -> None:
     tiles = [load(p) for p in paths]
     h, w = tiles[0].shape[:2]
     rows = -(-len(tiles) // cols)
-    sheet = np.zeros((rows * h, cols * w, 4), dtype=np.float32)
-    sheet[..., 3] = 1.0
+    sheet = np.empty((rows * h, cols * w, 4), dtype=np.float32)
+    last = tiles[-1]
+    sheet[...] = np.median(np.concatenate([last[0], last[-1], last[:, 0], last[:, -1]]), axis=0)  # background
     for n, tile in enumerate(tiles):
         r, c = divmod(n, cols)
         y = (rows - 1 - r) * h  # Blender images start at the bottom row

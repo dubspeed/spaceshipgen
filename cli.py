@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="cli.py", description="Procedural spaceship generator (headless)")
     src = ap.add_mutually_exclusive_group()
     src.add_argument("--params", help="path to a parameter JSON file")
-    src.add_argument("--preset", help="name of a preset in presets/ (without .json)")
+    src.add_argument("--preset", help="preset name(s) in presets/ without .json: 'fighter', 'miner_s,miner_m' or 'all'")
     ap.add_argument("--out", default=os.path.join(ROOT, "output"), help="output directory")
     ap.add_argument("--name", help="output file base name (default: <preset>_<seed>)")
     ap.add_argument("--seed", type=int, help="override the seed")
@@ -68,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--no-render", action="store_true")
     ap.add_argument("--views", default="three_quarter,top",
                     help="comma separated preview views: three_quarter, top")
+    ap.add_argument("--frame", type=float, help="render every ship at the same scale: frame this many metres")
     ap.add_argument("--samples", type=int, default=16, help="Cycles samples for the preview")
     ap.add_argument("--resolution", default="960x540", help="preview size WxH")
     ap.add_argument("--strict", action="store_true", help="fail if parameters needed repairing")
@@ -84,56 +85,57 @@ def script_args(argv: list[str]) -> list[str]:
     return []
 
 
+def load_jobs(args: argparse.Namespace) -> list[tuple[str, dict]]:
+    """(base name, raw params) for every ship source on the command line."""
+    if args.params:
+        with open(args.params, encoding="utf-8") as f:
+            return [(os.path.splitext(os.path.basename(args.params))[0], json.load(f))]
+    names = [n.strip() for n in (args.preset or "fighter").split(",") if n.strip()]
+    if names == ["all"]:
+        names = sorted(os.path.splitext(n)[0] for n in os.listdir(PRESET_DIR) if n.endswith(".json"))
+    jobs = []
+    for name in names:
+        with open(os.path.join(PRESET_DIR, name + ".json"), encoding="utf-8") as f:
+            jobs.append((name, json.load(f)))
+    return jobs
+
+
 def run(args: argparse.Namespace) -> list[dict]:
     import bpy
 
     from shipgen import export, generator, params
 
-    if args.params:
-        with open(args.params, encoding="utf-8") as f:
-            base = json.load(f)
-        base_name = os.path.splitext(os.path.basename(args.params))[0]
-    else:
-        preset = args.preset or "fighter"
-        with open(os.path.join(PRESET_DIR, preset + ".json"), encoding="utf-8") as f:
-            base = json.load(f)
-        base_name = preset
-
-    for path, value in args.overrides:
-        params.set_path(base, path, value)
-
-    seeds = args.seeds or [args.seed if args.seed is not None else base.get("seed", 0)]
+    jobs = load_jobs(args)
     width, height = (int(v) for v in args.resolution.lower().split("x"))
+    views = () if args.no_render else tuple(v.strip() for v in args.views.split(",") if v.strip())
+    single = len(jobs) == 1 and len(args.seeds or [0]) == 1
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
     results = []
-    for seed in seeds:
-        raw = dict(base, seed=seed)
-        checked = params.validate(raw)
-        for w in checked.warnings:
-            print(f"SHIPGEN_WARNING {w}", file=sys.stderr)
-        if args.strict and checked.warnings:
-            raise SystemExit(f"invalid parameters ({len(checked.warnings)} problems), see warnings above")
+    for base_name, base in jobs:
+        for path, value in args.overrides:
+            params.set_path(base, path, value)
+        seeds = args.seeds or [args.seed if args.seed is not None else base.get("seed", 0)]
+        for seed in seeds:
+            checked = params.validate(dict(base, seed=seed))
+            for w in checked.warnings:
+                print(f"SHIPGEN_WARNING {w}", file=sys.stderr)
+            if args.strict and checked.warnings:
+                raise SystemExit(f"invalid parameters ({len(checked.warnings)} problems), see warnings above")
 
-        ship = generator.generate(checked.params)
-        name = args.name if (args.name and len(seeds) == 1) else f"{args.name or base_name}_{seed}"
-        files = export.export_all(
-            ship,
-            args.out,
-            name,
-            glb=not args.no_glb,
-            blend=not args.no_blend,
-            views=() if args.no_render else tuple(v.strip() for v in args.views.split(",") if v.strip()),
-            resolution=(width, height),
-            samples=args.samples,
-        )
-        result = {"name": name, "seed": seed, "files": files, "stats": ship.stats(), "warnings": checked.warnings}
-        os.makedirs(args.out, exist_ok=True)
-        with open(os.path.join(args.out, name + ".json"), "w", encoding="utf-8") as f:
-            json.dump({"params": ship.params, "stats": result["stats"]}, f, indent=2)
-        print("SHIPGEN_RESULT " + json.dumps(result), flush=True)
-        results.append(result)
+            ship = generator.generate(checked.params)
+            name = args.name if (args.name and single) else f"{args.name or base_name}_{seed}"
+            files = export.export_all(
+                ship, args.out, name, glb=not args.no_glb, blend=not args.no_blend,
+                views=views, resolution=(width, height), samples=args.samples, frame=args.frame,
+            )
+            result = {"name": name, "seed": seed, "files": files, "stats": ship.stats(), "warnings": ship.warnings}
+            os.makedirs(args.out, exist_ok=True)
+            with open(os.path.join(args.out, name + ".json"), "w", encoding="utf-8") as f:
+                json.dump({"params": ship.params, "stats": result["stats"]}, f, indent=2)
+            print("SHIPGEN_RESULT " + json.dumps(result), flush=True)
+            results.append(result)
     return results
 
 

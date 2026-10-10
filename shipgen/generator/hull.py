@@ -35,33 +35,42 @@ class ClassProfile:
     ridge: float  # raises the top centre line into a spine (0 = flat roof)
     chamfer_bias: float  # added to (1 - squareness)
     stepped: bool = False  # variation as blocky modules with hard steps instead of bulges
+    cargo_zone: tuple[float, float] = (0.15, 0.7)  # t range where cargo modules can mount
+    hold: float = 0.0  # share of the hull volume usable as internal cargo hold
+    hold_kind: str = "general_m3"  # what the internal hold carries
+    armor: float = 1.0  # hull HP per surface area multiplier
 
 
 CLASS_PROFILES = {
     # dart: wide engine section, long tapering nose with a canopy bump
     "fighter": ClassProfile(
         keys=((0.0, 0.75, 0.7), (0.18, 1.0, 0.85), (0.42, 0.8, 1.0), (0.62, 0.5, 1.0), (0.8, 0.28, 0.55), (1.0, 0.0, 0.15)),
-        ridge=0.35, chamfer_bias=0.1,
+        ridge=0.35, chamfer_bias=0.1, armor=0.8,
     ),
     # needle: slim, very long nose
     "interceptor": ClassProfile(
         keys=((0.0, 0.6, 0.7), (0.15, 0.8, 0.8), (0.45, 0.5, 0.95), (0.7, 0.28, 0.7), (1.0, 0.0, 0.1)),
-        ridge=0.5, chamfer_bias=0.15,
+        ridge=0.5, chamfer_bias=0.15, armor=0.6,
     ),
     # brick: constant-width cargo body, stepped-down cab, blunt nose
     "freighter": ClassProfile(
         keys=((0.0, 0.95, 0.95), (0.05, 1.0, 1.0), (0.78, 1.0, 1.0), (0.84, 0.82, 0.85), (1.0, 0.6, 0.55)),
-        ridge=0.0, chamfer_bias=-0.2, stepped=True,
+        ridge=0.0, chamfer_bias=-0.2, stepped=True, cargo_zone=(0.1, 0.76), hold=0.45, armor=1.0,
+    ),
+    # mining barge: chunky body, broad blunt front to carry the rig
+    "miner": ClassProfile(
+        keys=((0.0, 0.85, 0.9), (0.1, 1.0, 1.0), (0.62, 1.0, 1.0), (0.8, 0.9, 0.85), (1.0, 0.75, 0.7)),
+        ridge=0.15, chamfer_bias=0.15, stepped=True, cargo_zone=(0.12, 0.62), hold=0.3, hold_kind="ore_m3", armor=1.3,
     ),
     # long hexagonal warship
     "corvette": ClassProfile(
         keys=((0.0, 0.8, 0.8), (0.12, 1.0, 1.0), (0.55, 0.9, 1.0), (0.8, 0.6, 0.8), (1.0, 0.22, 0.35)),
-        ridge=0.25, chamfer_bias=0.0, stepped=True,
+        ridge=0.25, chamfer_bias=0.0, stepped=True, cargo_zone=(0.2, 0.6), hold=0.1, armor=1.6,
     ),
     # stubby van
     "shuttle": ClassProfile(
         keys=((0.0, 0.85, 0.85), (0.2, 1.0, 1.0), (0.68, 1.0, 1.0), (0.88, 0.75, 0.8), (1.0, 0.4, 0.5)),
-        ridge=0.1, chamfer_bias=-0.05, stepped=True,
+        ridge=0.1, chamfer_bias=-0.05, stepped=True, cargo_zone=(0.15, 0.65), hold=0.25, armor=0.9,
     ),
 }
 
@@ -85,6 +94,8 @@ class HullShape:
     chamfer: float
     ridge: float
     point_nose: bool
+    profile: ClassProfile
+    max_half_width: float
 
     def y(self, t: float) -> float:
         return (t - 0.5) * self.length
@@ -190,7 +201,7 @@ def hull_shape(params: dict) -> HullShape:
         stations[-1] = Station(last.t, 0.0, 0.0, 0.0, last.z_center, 0.0)
 
     chamfer = min(max(1.0 - hp["squareness"] + profile.chamfer_bias, 0.0), 1.0)
-    return HullShape(length, tuple(stations), chamfer, profile.ridge, point_nose)
+    return HullShape(length, tuple(stations), chamfer, profile.ridge, point_nose, profile, max_half_width)
 
 
 def cross_section(st: Station, chamfer: float, ridge: float) -> list[tuple[float, float]]:

@@ -11,7 +11,8 @@ import bpy
 from mathutils import Vector
 
 from .. import params as params_mod
-from . import engines, hull, materials, wings
+from .. import stats as stats_mod
+from . import cargo, engines, hull, materials, mining, wings
 
 COLLECTION_NAME = "ShipGen"
 
@@ -22,6 +23,7 @@ class Ship:
     parts: list[bpy.types.Object]
     params: dict
     warnings: list[str] = field(default_factory=list)
+    gameplay: dict = field(default_factory=dict)  # see shipgen.stats
 
     @property
     def objects(self) -> list[bpy.types.Object]:
@@ -54,6 +56,7 @@ class Ship:
 
         lo, hi = self.bounds()
         return {
+            "gameplay": self.gameplay,
             "top_view": metrics.top_view(self),
             "tris": self.tri_count(),
             "max_tris": self.params["max_tris"],
@@ -98,8 +101,6 @@ def generate(raw_params: dict, collection_name: str = COLLECTION_NAME) -> Ship:
     root = bpy.data.objects.new("Ship", None)
     root.empty_display_type = "ARROWS"
     root.empty_display_size = p["hull"]["length"] * 0.1
-    root["shipgen_seed"] = p["seed"]
-    root["shipgen_class"] = p["class"]
     coll.objects.link(root)
 
     mats = materials.create_materials(p)
@@ -113,6 +114,14 @@ def generate(raw_params: dict, collection_name: str = COLLECTION_NAME) -> Ship:
         parts.append(wings_obj)
 
     warnings = list(result.warnings)
+
+    mining_obj = mining.build_mining(p, shape, coll, parent=root)
+    if mining_obj is not None:
+        mining_obj.data.materials.append(mats["accent"])
+        mining_obj.data.materials.append(mats["glow"])
+        parts.append(mining_obj)
+
+    # Budget order: hull, wings, mining are fixed; then engines, then cargo modules.
     tris_left = p["max_tris"] - sum(_tri_count(o.data) for o in parts)
     engine_count = min(p["engines"]["count"], max(tris_left // engines.TRIS_PER_ENGINE, 0))
     if engine_count < p["engines"]["count"]:
@@ -122,7 +131,34 @@ def generate(raw_params: dict, collection_name: str = COLLECTION_NAME) -> Ship:
         engines_obj.data.materials.append(mats["accent"])
         engines_obj.data.materials.append(mats["glow"])
         parts.append(engines_obj)
+        tris_left -= _tri_count(engines_obj.data)
+
+    cargo_obj, placed = cargo.build_cargo(p, shape, coll, parent=root)
+    if cargo_obj is not None and _tri_count(cargo_obj.data) > tris_left:
+        fit = tris_left // (_tri_count(cargo_obj.data) // placed)
+        fit -= fit % 2 if fit > 1 else 0  # keep pairs symmetric
+        _remove(cargo_obj)
+        cargo_obj, placed = cargo.build_cargo(dict(p, cargo=dict(p["cargo"], modules=fit)), shape, coll, root)
+    if placed < p["cargo"]["modules"] and p["cargo"]["type"] != "none":
+        warnings.append(f"cargo.modules reduced to {placed} (no room on the hull or over max_tris)")
+    if cargo_obj is not None:
+        for key in ("cargo", "accent", "glow"):
+            cargo_obj.data.materials.append(mats[key])
+        parts.append(cargo_obj)
 
     # TODO: greebles
 
-    return Ship(root=root, parts=parts, params=p, warnings=warnings)
+    for obj in parts:
+        if "shipgen_role" not in obj:
+            obj["shipgen_role"] = obj.name.removeprefix("Ship_").lower()
+    ship = Ship(root=root, parts=parts, params=p, warnings=warnings)
+    ship.gameplay = stats_mod.compute(ship, shape)
+    # exported as glTF extras on the root node (Godot imports them as node metadata)
+    root["shipgen"] = {"seed": p["seed"], "class": p["class"], "stats": ship.gameplay}
+    return ship
+
+
+def _remove(obj) -> None:
+    mesh = obj.data
+    bpy.data.objects.remove(obj, do_unlink=True)
+    bpy.data.meshes.remove(mesh)

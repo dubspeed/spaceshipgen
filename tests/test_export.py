@@ -64,6 +64,14 @@ class ExportTest(unittest.TestCase):
         )
         self.assertEqual(indices // 3, self.tris)
 
+    def test_glb_carries_stats_as_extras(self):
+        gltf = read_glb_json(self.files["glb"])
+        root = next(n for n in gltf["nodes"] if n["name"] == "Ship")
+        extras = root["extras"]["shipgen"]
+        self.assertEqual(extras["seed"], self.params["seed"])
+        self.assertEqual(extras["stats"], json.loads(json.dumps(self.ship.gameplay)))
+        self.assertGreater(extras["stats"]["acceleration_ms2"], 0)
+
     def test_png(self):
         for key in ("png", "png_top"):
             with open(self.files[key], "rb") as f:

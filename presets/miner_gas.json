@@ -1,0 +1,42 @@
+{
+  "seed": 105,
+  "class": "miner",
+  "hull": {
+    "length": 30,
+    "width_ratio": 0.3,
+    "height_ratio": 0.8,
+    "segments": 6,
+    "taper": 0.2,
+    "nose_sharpness": 0.3,
+    "squareness": 0.4,
+    "variation": 0.3
+  },
+  "wings": {
+    "type": "none",
+    "count": 0,
+    "span": 0.0,
+    "sweep_deg": 0
+  },
+  "engines": {
+    "count": 2,
+    "size": 2.8,
+    "glow_color": "#66ccff"
+  },
+  "mining": {
+    "type": "scoop",
+    "count": 2,
+    "size": 0.6
+  },
+  "cargo": {
+    "type": "tanks",
+    "modules": 4,
+    "size": 0.5
+  },
+  "greeble_density": 0.4,
+  "symmetry": true,
+  "style": {
+    "palette": "white_red",
+    "wear": 0.3
+  },
+  "max_tris": 20000
+}

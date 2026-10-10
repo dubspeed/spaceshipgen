@@ -1,0 +1,42 @@
+{
+  "seed": 104,
+  "class": "miner",
+  "hull": {
+    "length": 44,
+    "width_ratio": 0.34,
+    "height_ratio": 0.8,
+    "segments": 8,
+    "taper": 0.2,
+    "nose_sharpness": 0.2,
+    "squareness": 0.7,
+    "variation": 0.5
+  },
+  "wings": {
+    "type": "none",
+    "count": 0,
+    "span": 0.0,
+    "sweep_deg": 0
+  },
+  "engines": {
+    "count": 3,
+    "size": 4.0,
+    "glow_color": "#ffaa44"
+  },
+  "mining": {
+    "type": "claw",
+    "count": 4,
+    "size": 0.55
+  },
+  "cargo": {
+    "type": "hoppers",
+    "modules": 8,
+    "size": 0.6
+  },
+  "greeble_density": 0.4,
+  "symmetry": true,
+  "style": {
+    "palette": "industrial_yellow",
+    "wear": 0.6
+  },
+  "max_tris": 20000
+}

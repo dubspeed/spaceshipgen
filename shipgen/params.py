@@ -17,9 +17,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-SHIP_CLASSES = ("fighter", "interceptor", "freighter", "corvette", "shuttle")
+SHIP_CLASSES = ("fighter", "interceptor", "freighter", "miner", "corvette", "shuttle")
 WING_TYPES = ("none", "delta", "swept", "straight", "forward_swept")
-PALETTES = ("military_grey", "white_red", "desert", "navy", "black_gold", "rust")
+MINING_TYPES = ("none", "drill", "laser", "claw", "scoop")
+CARGO_TYPES = ("none", "containers", "hoppers", "tanks", "habitat")
+PALETTES = ("industrial_yellow", "military_grey", "white_red", "desert", "navy", "black_gold", "rust")
 
 _HEX_COLOR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
@@ -58,6 +60,17 @@ SCHEMA: dict[str, Any] = {
         "count": Field(int, 2, 0, 8),
         "size": Field(float, 1.2, 0.1, 30.0),
         "glow_color": Field(str, "#44aaff", color=True),
+    },
+    "mining": {
+        "type": Field(str, "none", choices=MINING_TYPES, description="Mining rig at the nose"),
+        "count": Field(int, 2, 1, 4, description="Laser emitters or claw arms"),
+        "size": Field(float, 0.5, 0.0, 1.0, description="Rig size relative to the hull"),
+    },
+    "cargo": {
+        "type": Field(str, "none", choices=CARGO_TYPES,
+                      description="containers = general freight, hoppers = ore, tanks = gas/liquid, habitat = passengers"),
+        "modules": Field(int, 0, 0, 24, description="Number of cargo modules mounted on the hull"),
+        "size": Field(float, 0.5, 0.0, 1.0, description="Module size relative to the hull"),
     },
     "greeble_density": Field(float, 0.4, 0.0, 1.0),
     "symmetry": Field(bool, True),
