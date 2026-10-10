@@ -94,3 +94,34 @@ class ExportTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(bpy is None, "requires Blender (bpy)")
+class GodotAxesTest(unittest.TestCase):
+    """The .glb must match Godot: +Y up, -Z forward (nose), +X right, no node rotations."""
+
+    def test_glb_axes(self):
+        from shipgen import export, generator
+
+        p = params.load(os.path.join(ROOT, "presets", "interceptor.json")).params  # has a tail fin
+        ship = generator.generate(p)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = export.export_glb(ship, os.path.join(tmp, "ship.glb"))
+            gltf = read_glb_json(path)
+
+        for node in gltf["nodes"]:
+            self.assertNotIn("rotation", node, node["name"])
+
+        def extent(mesh_name):
+            mesh = next(m for m in gltf["meshes"] if m["name"] == mesh_name)
+            acc = gltf["accessors"][mesh["primitives"][0]["attributes"]["POSITION"]]
+            return acc["min"], acc["max"]
+
+        half = p["hull"]["length"] / 2
+        hull_min, hull_max = extent("Ship_Hull")
+        self.assertAlmostEqual(hull_min[2], -half, places=3)  # nose at -Z
+        self.assertAlmostEqual(hull_max[2], half, places=3)
+        engines_min, _ = extent("Ship_Engines")
+        self.assertGreater(engines_min[2], 0)  # engines at the back (+Z)
+        _, wings_max = extent("Ship_Wings")
+        self.assertGreater(wings_max[1], hull_max[1])  # tail fin points up (+Y)

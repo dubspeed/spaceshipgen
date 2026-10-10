@@ -43,7 +43,10 @@ the extension panel (`shipgen/ui.py`), the headless CLI (`cli.py`) and, later, t
 
 ## Conventions
 
-- Axes: nose +Y, up +Z, ship centred on the origin. The **hull** spans exactly `hull.length`
+- Export target is **Godot** (+Y up, -Z forward, +X right). The glTF exporter's Y-up
+  conversion maps Blender's nose +Y to -Z, so modelling stays in Blender axes and no node
+  rotation is needed; `GodotAxesTest` pins this. Don't add a rotation at export time.
+- Axes in Blender: nose +Y, up +Z, ship centred on the origin. The **hull** spans exactly `hull.length`
   in Y; engines may stick out behind it.
 - Randomness: one `random.Random(f"{seed}:<part>")` per part, so changing one part never
   changes the shapes of other parts for the same seed.
