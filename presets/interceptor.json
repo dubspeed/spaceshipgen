@@ -1,0 +1,32 @@
+{
+  "seed": 3,
+  "class": "interceptor",
+  "hull": {
+    "length": 14.0,
+    "width_ratio": 0.22,
+    "height_ratio": 0.6,
+    "segments": 6,
+    "taper": 0.3,
+    "nose_sharpness": 0.9,
+    "squareness": 0.2,
+    "variation": 0.2
+  },
+  "wings": {
+    "type": "forward_swept",
+    "count": 3,
+    "span": 10.0,
+    "sweep_deg": 30
+  },
+  "engines": {
+    "count": 1,
+    "size": 1.4,
+    "glow_color": "#ff5533"
+  },
+  "greeble_density": 0.4,
+  "symmetry": true,
+  "style": {
+    "palette": "white_red",
+    "wear": 0.1
+  },
+  "max_tris": 10000
+}

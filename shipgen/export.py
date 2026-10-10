@@ -12,8 +12,10 @@ PREVIEW_COLLECTION = "ShipGen_Preview"
 
 
 def _select_only(objects) -> None:
+    bpy.context.view_layer.update()
     for obj in bpy.context.view_layer.objects:
-        obj.select_set(False)
+        if obj is not None:
+            obj.select_set(False)
     for obj in objects:
         obj.select_set(True)
     bpy.context.view_layer.objects.active = objects[0]
@@ -77,8 +79,15 @@ def fit_distance(rot, points, center: Vector, tan_h: float, tan_v: float, margin
     return max(distance, 0.1)
 
 
-def setup_preview(ship, resolution=(960, 540), samples: int = 16) -> bpy.types.Object:
-    """Add camera + lights framing the ship and configure Cycles on the CPU."""
+VIEWS = ("three_quarter", "top")
+
+
+def setup_preview(ship, view: str = "three_quarter", resolution=(960, 540), samples: int = 16) -> bpy.types.Object:
+    """Add camera + lights framing the ship and configure Cycles on the CPU.
+
+    ``view``: "three_quarter" (perspective, front right above) or "top"
+    (orthographic, nose pointing right; for judging silhouettes).
+    """
     _clear_preview()
     scene = bpy.context.scene
     coll = bpy.data.collections.new(PREVIEW_COLLECTION)
@@ -95,15 +104,24 @@ def setup_preview(ship, resolution=(960, 540), samples: int = 16) -> bpy.types.O
     cam = bpy.data.objects.new("ShipGen_Camera", cam_data)
     coll.objects.link(cam)
 
-    # Three-quarter view from the front right, slightly above.
-    view_dir = Vector((1.0, 0.9, 0.6)).normalized()
-    cam.location = center + view_dir * radius * 4
-    _look_at(cam, center)
     aspect = resolution[0] / resolution[1]
-    tan_h = cam_data.sensor_width / 2 / cam_data.lens  # sensor_fit AUTO: width is the long side
-    tan_v = tan_h / aspect
-    distance = fit_distance(cam.rotation_euler.to_matrix(), _corners(lo, hi), center, tan_h, tan_v)
-    cam.location = center + view_dir * distance
+    if view == "top":
+        size = hi - lo
+        cam_data.type = "ORTHO"
+        cam_data.ortho_scale = max(size.y, size.x * aspect) * 1.1
+        cam.rotation_euler = (0.0, 0.0, math.pi / 2)  # image right = +Y (nose)
+        distance = radius * 3
+        cam.location = center + Vector((0.0, 0.0, distance))
+    elif view == "three_quarter":
+        view_dir = Vector((1.0, 0.9, 0.6)).normalized()
+        cam.location = center + view_dir * radius * 4
+        _look_at(cam, center)
+        tan_h = cam_data.sensor_width / 2 / cam_data.lens  # sensor_fit AUTO: width is the long side
+        tan_v = tan_h / aspect
+        distance = fit_distance(cam.rotation_euler.to_matrix(), _corners(lo, hi), center, tan_h, tan_v)
+        cam.location = center + view_dir * distance
+    else:
+        raise ValueError(f"unknown view {view!r}, expected one of {VIEWS}")
     scene.camera = cam
 
     def add_light(name, kind, energy, direction, color=(1, 1, 1), angle=None):
@@ -134,7 +152,7 @@ def setup_preview(ship, resolution=(960, 540), samples: int = 16) -> bpy.types.O
     scene.cycles.device = "CPU"
     scene.cycles.samples = samples
     scene.cycles.use_adaptive_sampling = True
-    scene.cycles.use_denoising = _has_oidn()  # not compiled into Ubuntu's Blender package
+    scene.cycles.use_denoising = _has_oidn()  # missing in some Linux distro builds
     scene.render.resolution_x, scene.render.resolution_y = resolution
     scene.render.resolution_percentage = 100
     scene.render.film_transparent = False
@@ -151,9 +169,9 @@ def _has_oidn() -> bool:
         return False
 
 
-def render_preview(ship, path: str, resolution=(960, 540), samples: int = 16) -> str:
+def render_preview(ship, path: str, view: str = "three_quarter", resolution=(960, 540), samples: int = 16) -> str:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    setup_preview(ship, resolution=resolution, samples=samples)
+    setup_preview(ship, view=view, resolution=resolution, samples=samples)
     scene = bpy.context.scene
     scene.render.filepath = os.path.abspath(path)
     bpy.ops.render.render(write_still=True)
@@ -166,17 +184,20 @@ def export_all(
     name: str,
     glb: bool = True,
     blend: bool = True,
-    render: bool = True,
+    views=VIEWS,
     resolution=(960, 540),
     samples: int = 16,
 ) -> dict[str, str]:
-    """Write ``<name>.glb``, ``<name>.png`` and ``<name>.blend`` into ``out_dir``."""
+    """Write ``<name>.glb``, ``<name>.blend`` and one PNG per view into ``out_dir``:
+    ``<name>.png`` (three-quarter) and ``<name>_top.png``. Pass ``views=()`` to skip rendering."""
     paths = {}
     if glb:
         paths["glb"] = export_glb(ship, os.path.join(out_dir, name + ".glb"))
-    if render:
-        paths["png"] = render_preview(
-            ship, os.path.join(out_dir, name + ".png"), resolution=resolution, samples=samples
+    for view in reversed(views):  # three-quarter last, so the .blend keeps that camera
+        key = "png" if view == "three_quarter" else f"png_{view}"
+        suffix = "" if view == "three_quarter" else f"_{view}"
+        paths[key] = render_preview(
+            ship, os.path.join(out_dir, name + suffix + ".png"), view=view, resolution=resolution, samples=samples
         )
     if blend:  # last, so the .blend also contains the preview camera and lights
         paths["blend"] = save_blend(os.path.join(out_dir, name + ".blend"))

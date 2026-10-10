@@ -1,191 +1,255 @@
-"""Hull built from superellipse cross-sections lofted along the ship axis.
+"""Low-poly hull: faceted 10-vertex cross-sections lofted along the ship axis.
 
-Coordinate convention: nose points to +Y, up is +Z, the hull is centred on the
-origin along Y. (The glTF exporter converts this to glTF's Y-up on export.)
+Each ship class has its own plan-form (width/height keyframes from tail to nose),
+so classes read differently from the top. Faces are flat shaded; edges stay sharp.
+
+Coordinate convention: nose points to +Y, up is +Z, the hull spans exactly
+``hull.length`` along Y centred on the origin.
 """
 
 from __future__ import annotations
 
-import math
+import bisect
 import random
 from dataclasses import dataclass
 
 import bmesh
 import bpy
 
-# Share of the ship's triangle budget the hull may use; the rest is reserved
-# for wings, engines and greebles.
+# Share of the ship's triangle budget the hull may use; the rest is for wings,
+# engines and greebles.
 HULL_TRI_SHARE = 0.6
 
-# (ring vertices, rings per segment), best quality first.
-_RESOLUTIONS = ((32, 8), (24, 6), (20, 5), (16, 4), (12, 3), (8, 2), (8, 1), (6, 1))
+# Merge an even station into a keyframe if they are closer than this (in t).
+_MIN_STATION_GAP = 0.04
+# Half length (in t) of the step between two modules of a stepped hull.
+_STEP = 0.008
+# Nose narrower than this (relative to max width) becomes a single tip vertex.
+_POINT_NOSE = 0.05
 
 
 @dataclass(frozen=True)
-class ClassTraits:
-    peak: float  # position (0 = tail, 1 = nose) of the widest section
-    cockpit: float  # position of the cockpit hump
-    hump: float  # hump height relative to local section height
-    belly: float  # bottom half height relative to top half
-    squareness_bias: float
+class ClassProfile:
+    # (t, width, height) keyframes; t: 0 = tail, 1 = nose; values relative to max
+    keys: tuple[tuple[float, float, float], ...]
+    ridge: float  # raises the top centre line into a spine (0 = flat roof)
+    chamfer_bias: float  # added to (1 - squareness)
+    stepped: bool = False  # variation as blocky modules with hard steps instead of bulges
 
 
-CLASS_TRAITS = {
-    "fighter": ClassTraits(peak=0.35, cockpit=0.68, hump=0.35, belly=0.75, squareness_bias=0.0),
-    "interceptor": ClassTraits(peak=0.25, cockpit=0.6, hump=0.3, belly=0.7, squareness_bias=-0.1),
-    "freighter": ClassTraits(peak=0.5, cockpit=0.88, hump=0.15, belly=1.0, squareness_bias=0.35),
-    "corvette": ClassTraits(peak=0.45, cockpit=0.75, hump=0.25, belly=0.9, squareness_bias=0.2),
-    "shuttle": ClassTraits(peak=0.5, cockpit=0.8, hump=0.2, belly=0.9, squareness_bias=0.1),
+CLASS_PROFILES = {
+    # dart: wide engine section, long tapering nose with a canopy bump
+    "fighter": ClassProfile(
+        keys=((0.0, 0.75, 0.7), (0.18, 1.0, 0.85), (0.42, 0.8, 1.0), (0.62, 0.5, 1.0), (0.8, 0.28, 0.55), (1.0, 0.0, 0.15)),
+        ridge=0.35, chamfer_bias=0.1,
+    ),
+    # needle: slim, very long nose
+    "interceptor": ClassProfile(
+        keys=((0.0, 0.6, 0.7), (0.15, 0.8, 0.8), (0.45, 0.5, 0.95), (0.7, 0.28, 0.7), (1.0, 0.0, 0.1)),
+        ridge=0.5, chamfer_bias=0.15,
+    ),
+    # brick: constant-width cargo body, stepped-down cab, blunt nose
+    "freighter": ClassProfile(
+        keys=((0.0, 0.95, 0.95), (0.05, 1.0, 1.0), (0.78, 1.0, 1.0), (0.84, 0.82, 0.85), (1.0, 0.6, 0.55)),
+        ridge=0.0, chamfer_bias=-0.2, stepped=True,
+    ),
+    # long hexagonal warship
+    "corvette": ClassProfile(
+        keys=((0.0, 0.8, 0.8), (0.12, 1.0, 1.0), (0.55, 0.9, 1.0), (0.8, 0.6, 0.8), (1.0, 0.22, 0.35)),
+        ridge=0.25, chamfer_bias=0.0, stepped=True,
+    ),
+    # stubby van
+    "shuttle": ClassProfile(
+        keys=((0.0, 0.85, 0.85), (0.2, 1.0, 1.0), (0.68, 1.0, 1.0), (0.88, 0.75, 0.8), (1.0, 0.4, 0.5)),
+        ridge=0.1, chamfer_bias=-0.05, stepped=True,
+    ),
 }
 
 
-def choose_resolution(segments: int, tri_budget: int) -> tuple[int, int]:
-    """Pick (ring_verts, ring_count) so the hull stays within ``tri_budget``.
-
-    The hull has ``2 * ring_verts * ring_count`` triangles (quads between rings
-    plus a triangle fan at nose and tail).
-    """
-    for verts, per_segment in _RESOLUTIONS:
-        rings = segments * per_segment + 1
-        if 2 * verts * rings <= tri_budget:
-            return verts, rings
-    verts, per_segment = _RESOLUTIONS[-1]
-    return verts, segments * per_segment + 1
+@dataclass(frozen=True)
+class Station:
+    t: float
+    half_width: float
+    top: float  # height above z_center
+    bottom: float  # depth below z_center
+    z_center: float
+    asym: float  # right side scaled by (1 + asym), left by (1 - asym)
 
 
-def _smoothstep(x: float) -> float:
-    x = min(max(x, 0.0), 1.0)
-    return x * x * (3 - 2 * x)
+@dataclass(frozen=True)
+class HullShape:
+    """The hull's sections. Other parts (wings, engines) attach to it."""
+
+    length: float
+    stations: tuple[Station, ...]
+    chamfer: float
+    ridge: float
+    point_nose: bool
+
+    def y(self, t: float) -> float:
+        return (t - 0.5) * self.length
+
+    def section(self, t: float) -> Station:
+        """Linearly interpolated section at t (0 = tail, 1 = nose)."""
+        ts = [s.t for s in self.stations]
+        i = min(max(bisect.bisect_right(ts, t) - 1, 0), len(ts) - 2)
+        a, b = self.stations[i], self.stations[i + 1]
+        f = min(max((t - a.t) / (b.t - a.t), 0.0), 1.0)
+        mix = lambda u, v: u + (v - u) * f  # noqa: E731
+        return Station(
+            t, mix(a.half_width, b.half_width), mix(a.top, b.top), mix(a.bottom, b.bottom),
+            mix(a.z_center, b.z_center), mix(a.asym, b.asym),
+        )
 
 
-def _sample(controls: list[float], t: float) -> float:
-    """Catmull-Rom interpolation of evenly spaced control values at t in [0, 1]."""
-    n = len(controls) - 1
-    x = min(max(t, 0.0), 1.0) * n
-    i = min(int(x), n - 1)
-    f = x - i
-    p0 = controls[max(i - 1, 0)]
-    p1 = controls[i]
-    p2 = controls[i + 1]
-    p3 = controls[min(i + 2, n)]
-    return 0.5 * (
-        2 * p1 + (-p0 + p2) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f + (-p0 + 3 * p1 - 3 * p2 + p3) * f**3
-    )
+def _profile_value(keys, t: float, idx: int) -> float:
+    ts = [k[0] for k in keys]
+    i = min(max(bisect.bisect_right(ts, t) - 1, 0), len(ts) - 2)
+    a, b = keys[i], keys[i + 1]
+    f = (t - a[0]) / (b[0] - a[0])
+    return a[idx] + (b[idx] - a[idx]) * f
 
 
-def envelope(t: float, peak: float, taper: float, nose_sharpness: float) -> float:
-    """Base width profile, 0 at the nose tip, 1 at ``peak``."""
-    if t <= peak:
-        tail = max(1.0 - taper, 0.08)
-        return tail + (1.0 - tail) * _smoothstep(t / peak if peak > 0 else 1.0)
-    u = (1.0 - t) / (1.0 - peak)  # 1 at peak, 0 at nose
-    exponent = 0.25 + 1.5 * nose_sharpness
-    return u**exponent
+def _station_ts(keys, segments: int, with_even: bool, stepped: bool) -> tuple[list[float], set[int]]:
+    """Station positions, and the module boundaries (indices 1..segments-1) that got a step."""
+    ts = [k[0] for k in keys]
+    steps: set[int] = set()
+    if with_even:
+        for i in range(1, segments):
+            t = i / segments
+            if all(abs(t - k) >= _MIN_STATION_GAP for k in ts):
+                if stepped:
+                    ts += [t - _STEP, t + _STEP]
+                    steps.add(i)
+                else:
+                    ts.append(t)
+    return sorted(ts), steps
 
 
-def _superellipse(theta: float, exponent: float) -> tuple[float, float]:
-    c, s = math.cos(theta), math.sin(theta)
-    # cos(pi/2) is ~6e-17, which |c| ** 0.25 would blow up to ~1e-4.
-    c = 0.0 if abs(c) < 1e-9 else c
-    s = 0.0 if abs(s) < 1e-9 else s
-    e = 2.0 / exponent
-    return math.copysign(abs(c) ** e, c), math.copysign(abs(s) ** e, s)
-
-
-def build_hull_mesh(params: dict, name: str = "Ship_Hull") -> bpy.types.Mesh:
+def hull_shape(params: dict) -> HullShape:
+    """Compute the hull's sections from parameters (no Blender data created)."""
     hp = params["hull"]
-    traits = CLASS_TRAITS[params["class"]]
+    profile = CLASS_PROFILES[params["class"]]
     rng = random.Random(f"{params['seed']}:hull")
 
     length = hp["length"]
-    half_width = 0.5 * length * hp["width_ratio"]
-    half_height = half_width * hp["height_ratio"]
-    squareness = min(max(hp["squareness"] + traits.squareness_bias, 0.0), 1.0)
-    exponent = 2.0 + 6.0 * squareness
+    max_half_width = 0.5 * length * hp["width_ratio"]
+    max_height = max_half_width * hp["height_ratio"]
     variation = hp["variation"]
-    peak = min(max(traits.peak + rng.uniform(-0.08, 0.08) * variation, 0.15), 0.7)
+    ns = hp["nose_sharpness"]
 
-    segments = hp["segments"]
+    keys = [list(k) for k in profile.keys]
+    keys[0][1] *= 1.0 - 0.5 * hp["taper"]  # narrower tail
+    keys[0][2] *= 1.0 - 0.3 * hp["taper"]
+    nose_w = keys[-1][1] * (1.0 - 0.8 * ns) + 0.25 * (1.0 - ns) ** 2
+    if keys[-1][1] > 0:
+        keys[-1][2] *= nose_w / keys[-1][1]  # keep the nose face's proportions
+    keys[-1][1] = nose_w
+    point_nose = nose_w < _POINT_NOSE
+
     budget = int(params["max_tris"] * HULL_TRI_SHARE)
-    ring_verts, ring_count = choose_resolution(segments, budget)
+    segments = hp["segments"]
+    ts, steps = _station_ts(keys, segments, True, profile.stepped)
+    if 20 * len(ts) > budget:  # ~20 tris per ring; fall back to the class keyframes only
+        ts, steps = _station_ts(keys, segments, False, profile.stepped)
 
-    # Per-control-point random modulation (bulges, pinches, spine offsets).
-    def jitter(amount: float) -> list[float]:
-        vals = [1.0 + rng.uniform(-amount, amount) * variation for _ in range(segments)]
-        vals[-1] = 1.0  # keep the nose clean
-        return vals
+    def asym() -> float:
+        return 0.0 if params["symmetry"] else rng.uniform(-0.25, 0.25) * max(variation, 0.3)
 
-    width_mod = jitter(0.35)
-    height_mod = jitter(0.35)
-    spine_mod = [rng.uniform(-0.15, 0.15) * variation for _ in range(segments)]
-    asym_mod = (
-        [0.0] * segments
-        if params["symmetry"]
-        else [rng.uniform(-0.25, 0.25) * max(variation, 0.3) for _ in range(segments)]
-    )
+    if profile.stepped:
+        # One (width, height, asym) factor per module; modules only ever shrink, so
+        # the hull's maximum width/height still follow the parameters. Boundaries
+        # without a step (too close to a keyframe) merge with the previous module.
+        modules = []
+        for m in range(segments):
+            if m > 0 and m not in steps:
+                modules.append(modules[-1])
+                continue
+            nose_module = m == segments - 1
+            pick = lambda: 1.0 - variation * rng.choice((0.0, 0.0, 0.12, 0.25))  # noqa: E731
+            modules.append((1.0, 1.0, 0.0) if nose_module else (pick(), pick(), asym()))
+        jitter = [modules[min(int(t * segments), segments - 1)] + (0.0,) for t in ts]
+    else:
+        jitter = []
+        for i in range(len(ts)):
+            inner = 0 < i < len(ts) - 1
+            jitter.append((
+                1.0 + rng.uniform(-0.25, 0.25) * variation if inner else 1.0,
+                1.0 + rng.uniform(-0.25, 0.25) * variation if inner else 1.0,
+                asym(),
+                rng.uniform(-0.12, 0.12) * variation if inner else 0.0,
+            ))
 
+    stations = []
+    for t, (jw, jh, a, jz) in zip(ts, jitter):
+        w = max(max_half_width * _profile_value(keys, t, 1) * jw, 1e-3)
+        h = max(max_height * _profile_value(keys, t, 2) * jh, 1e-3)
+        stations.append(Station(t, w, h * 0.55, h * 0.45, jz * max_height, a))
+    if point_nose:
+        last = stations[-1]
+        stations[-1] = Station(last.t, 0.0, 0.0, 0.0, last.z_center, 0.0)
+
+    chamfer = min(max(1.0 - hp["squareness"] + profile.chamfer_bias, 0.0), 1.0)
+    return HullShape(length, tuple(stations), chamfer, profile.ridge, point_nose)
+
+
+def cross_section(st: Station, chamfer: float, ridge: float) -> list[tuple[float, float]]:
+    """10 (x, z) points, clockwise from the top centre, mirror symmetric (unless asym)."""
+    w, top, bot = st.half_width, st.top, st.bottom
+    c = chamfer
+    roof = top * (1.0 - 0.6 * ridge)
+    right = [
+        (w * (1.0 - 0.7 * c), roof),  # roof edge
+        (w, roof * (0.55 - 0.45 * c)),  # upper side
+        (w * (1.0 - 0.15 * c), -bot * 0.3),  # lower side
+        (w * (1.0 - 0.6 * c) * 0.85, -bot),  # bottom edge
+    ]
+    pts = [(0.0, top)]
+    pts += [(x * (1.0 + st.asym), z) for x, z in right]
+    pts.append((0.0, -bot))
+    pts += [(-x * (1.0 - st.asym), z) for x, z in reversed(right)]
+    return [(x, z + st.z_center) for x, z in pts]
+
+
+def build_hull_mesh(shape: HullShape, name: str = "Ship_Hull") -> bpy.types.Mesh:
     bm = bmesh.new()
     rings = []
-    for k in range(ring_count):
-        t = k / ring_count  # last ring stops short of the tip
-        env = envelope(t, peak, hp["taper"], hp["nose_sharpness"])
-        w = max(half_width * env * _sample(width_mod, t), 1e-3)
-        h_top = max(half_height * env * _sample(height_mod, t), 1e-3)
-        h_bottom = h_top * traits.belly
-        hump = traits.hump * h_top * math.exp(-(((t - traits.cockpit) / 0.12) ** 2))
-        z_center = _sample(spine_mod, t) * half_height
-        asym = _sample(asym_mod, t)
-        y = (t - 0.5) * length
+    stations = shape.stations[:-1] if shape.point_nose else shape.stations
+    for st in stations:
+        y = shape.y(st.t)
+        rings.append([bm.verts.new((x, y, z)) for x, z in cross_section(st, shape.chamfer, shape.ridge)])
 
-        ring = []
-        for j in range(ring_verts):
-            theta = math.pi / 2 + 2 * math.pi * j / ring_verts  # start at top: mirror symmetric
-            sx, sz = _superellipse(theta, exponent)
-            x = sx * w * (1.0 + asym if sx > 0 else 1.0 - asym)
-            if sz >= 0:
-                z = sz * h_top + hump * sz * sz  # hump only on the upper half
-            else:
-                z = sz * h_bottom
-            ring.append(bm.verts.new((x, y, z_center + z)))
-        rings.append(ring)
-
-    tip_z = _sample(spine_mod, 1.0) * half_height
-    tip = bm.verts.new((0.0, 0.5 * length, tip_z))
-    tail_center = bm.verts.new((0.0, -0.5 * length, sum(v.co.z for v in rings[0]) / ring_verts))
-
+    n = len(rings[0])
     for a, b in zip(rings, rings[1:]):
-        for j in range(ring_verts):
-            j2 = (j + 1) % ring_verts
+        for j in range(n):
+            j2 = (j + 1) % n
             bm.faces.new((a[j], a[j2], b[j2], b[j]))
-    last = rings[-1]
-    for j in range(ring_verts):
-        bm.faces.new((last[j], last[(j + 1) % ring_verts], tip))
-    first = rings[0]
-    for j in range(ring_verts):
-        bm.faces.new((first[(j + 1) % ring_verts], first[j], tail_center))
 
+    bm.faces.new(list(reversed(rings[0])))  # flat tail (engine mount)
+    if shape.point_nose:
+        tip_st = shape.stations[-1]
+        tip = bm.verts.new((0.0, shape.y(tip_st.t), tip_st.z_center))
+        last = rings[-1]
+        for j in range(n):
+            bm.faces.new((last[j], last[(j + 1) % n], tip))
+    else:
+        bm.faces.new(rings[-1])
+
+    # Fan the n-gon caps from their centre: a plain triangulation would create
+    # zero-area triangles where boxy sections have collinear points.
+    bmesh.ops.poke(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     mesh = bpy.data.meshes.new(name)
     bm.to_mesh(mesh)
     bm.free()
-
     for poly in mesh.polygons:
-        poly.use_smooth = True
-    if hasattr(mesh, "use_auto_smooth"):  # Blender < 4.1
-        mesh.use_auto_smooth = True
-        mesh.auto_smooth_angle = math.radians(40)
+        poly.use_smooth = False
     return mesh
 
 
-def build_hull(params: dict, collection: bpy.types.Collection, parent=None) -> bpy.types.Object:
-    mesh = build_hull_mesh(params)
-    obj = bpy.data.objects.new("Ship_Hull", mesh)
+def build_hull(params: dict, collection, parent=None) -> tuple[bpy.types.Object, HullShape]:
+    shape = hull_shape(params)
+    obj = bpy.data.objects.new("Ship_Hull", build_hull_mesh(shape))
     collection.objects.link(obj)
     obj.parent = parent
-    if not hasattr(mesh, "use_auto_smooth"):  # Blender >= 4.1: smooth-by-angle modifier
-        try:
-            with bpy.context.temp_override(object=obj, active_object=obj, selected_objects=[obj]):
-                bpy.ops.object.shade_smooth_by_angle(angle=math.radians(40))
-        except (AttributeError, RuntimeError):
-            pass
-    return obj
+    return obj, shape

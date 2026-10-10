@@ -1,5 +1,6 @@
 """End-to-end: run cli.py in a Blender subprocess. Runs from plain Python."""
 
+import importlib.util
 import json
 import os
 import shutil
@@ -13,8 +14,20 @@ sys.path.insert(0, ROOT)
 
 import cli  # noqa: E402
 
-BLENDER = os.environ.get("BLENDER", shutil.which("blender"))
-IN_BLENDER = "bpy" in sys.modules
+BLENDER = os.environ.get("BLENDER") or shutil.which("blender")
+IN_BLENDER_BINARY = os.path.basename(sys.argv[0]).startswith("blender")
+HAS_BPY_MODULE = importlib.util.find_spec("bpy") is not None
+
+
+def cli_command() -> list[str] | None:
+    """How to run cli.py: $BLENDER if set, else this interpreter if it has the bpy
+    module (PyPI), else the blender binary on PATH."""
+    script = os.path.join(ROOT, "cli.py")
+    if IN_BLENDER_BINARY:
+        return None
+    if os.environ.get("BLENDER") or not HAS_BPY_MODULE:
+        return [BLENDER, "-b", "--factory-startup", "-P", script, "--"] if BLENDER else None
+    return [sys.executable, script]
 
 
 class ArgParsingTest(unittest.TestCase):
@@ -31,10 +44,10 @@ class ArgParsingTest(unittest.TestCase):
         self.assertEqual(cli.script_args(["blender"]), [])
 
 
-@unittest.skipIf(not BLENDER or IN_BLENDER, "needs a blender executable (and not running inside Blender)")
+@unittest.skipIf(cli_command() is None, "needs the bpy module or a blender executable")
 class CliTest(unittest.TestCase):
     def run_cli(self, *args):
-        cmd = [BLENDER, "-b", "--factory-startup", "-P", os.path.join(ROOT, "cli.py"), "--", *args]
+        cmd = [*cli_command(), *args]
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         results = [
             json.loads(line.split(" ", 1)[1])
@@ -51,8 +64,8 @@ class CliTest(unittest.TestCase):
             )
             self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
             self.assertEqual(len(results), 1)
-            for ext in ("glb", "blend", "png", "json"):
-                path = os.path.join(out, f"fighter_42.{ext}")
+            for suffix in (".glb", ".blend", ".png", "_top.png", ".json"):
+                path = os.path.join(out, f"fighter_42{suffix}")
                 self.assertTrue(os.path.isfile(path), path)
             with open(os.path.join(out, "fighter_42.json")) as f:
                 meta = json.load(f)
@@ -68,7 +81,7 @@ class CliTest(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
             self.assertEqual([r["seed"] for r in results], [1, 2, 3])
             for r in results:
-                self.assertAlmostEqual(r["stats"]["dimensions"][1], 30.0, places=3)
+                self.assertAlmostEqual(r["stats"]["bbox_max"][1], 15.0, places=3)  # nose at +length/2
                 self.assertLessEqual(r["stats"]["tris"], 2000)
             self.assertEqual(sorted(os.listdir(out)), sorted(
                 f"fighter_{s}.{e}" for s in (1, 2, 3) for e in ("glb", "json")))

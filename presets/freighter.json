@@ -11,10 +11,22 @@
     "squareness": 0.7,
     "variation": 0.5
   },
-  "wings": { "type": "none", "count": 0, "span": 0.0, "sweep_deg": 0 },
-  "engines": { "count": 4, "size": 3.0, "glow_color": "#ffaa44" },
+  "wings": {
+    "type": "none",
+    "count": 0,
+    "span": 0.0,
+    "sweep_deg": 0
+  },
+  "engines": {
+    "count": 4,
+    "size": 5.0,
+    "glow_color": "#ffaa44"
+  },
   "greeble_density": 0.7,
   "symmetry": true,
-  "style": { "palette": "desert", "wear": 0.7 },
+  "style": {
+    "palette": "desert",
+    "wear": 0.7
+  },
   "max_tris": 30000
 }

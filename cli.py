@@ -1,10 +1,11 @@
 """Headless entry point.
 
-    blender -b --factory-startup -P cli.py -- --params presets/fighter.json
-    blender -b --factory-startup -P cli.py -- --preset fighter --seeds 1-20 --no-render
-    blender -b --factory-startup -P cli.py -- --preset freighter --set hull.length=40 --set style.wear=0.8
+    .venv/bin/python cli.py --preset fighter                 # bpy module (see scripts/setup_env.sh)
+    .venv/bin/python cli.py --preset fighter --seeds 1-20 --no-render
+    .venv/bin/python cli.py --preset freighter --set hull.length=40 --set style.wear=0.8
+    blender -b --factory-startup -P cli.py -- --preset fighter    # with a Blender binary
 
-Writes <name>.glb, <name>.blend, <name>.png and <name>.json (validated params +
+Writes <name>.glb, <name>.blend, <name>.png (+ <name>_top.png) and <name>.json (validated params +
 stats) per ship into --out (default: output/). Prints one JSON summary line per
 ship prefixed with ``SHIPGEN_RESULT``. Exit code is non-zero on failure.
 """
@@ -65,6 +66,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--no-glb", action="store_true")
     ap.add_argument("--no-blend", action="store_true")
     ap.add_argument("--no-render", action="store_true")
+    ap.add_argument("--views", default="three_quarter,top",
+                    help="comma separated preview views: three_quarter, top")
     ap.add_argument("--samples", type=int, default=16, help="Cycles samples for the preview")
     ap.add_argument("--resolution", default="960x540", help="preview size WxH")
     ap.add_argument("--strict", action="store_true", help="fail if parameters needed repairing")
@@ -72,7 +75,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def script_args(argv: list[str]) -> list[str]:
-    return argv[argv.index("--") + 1 :] if "--" in argv else []
+    """Arguments meant for this script: after ``--`` when run by the Blender binary,
+    everything after the script name when run as ``python cli.py`` (bpy module)."""
+    if "--" in argv:
+        return argv[argv.index("--") + 1 :]
+    if argv and argv[0].endswith(".py"):
+        return argv[1:]
+    return []
 
 
 def run(args: argparse.Namespace) -> list[dict]:
@@ -115,7 +124,7 @@ def run(args: argparse.Namespace) -> list[dict]:
             name,
             glb=not args.no_glb,
             blend=not args.no_blend,
-            render=not args.no_render,
+            views=() if args.no_render else tuple(v.strip() for v in args.views.split(",") if v.strip()),
             resolution=(width, height),
             samples=args.samples,
         )

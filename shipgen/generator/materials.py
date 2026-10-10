@@ -23,13 +23,16 @@ def hex_to_rgb(value: str) -> tuple[float, float, float]:
     return tuple(int(value[i : i + 2], 16) / 255.0 for i in (0, 2, 4))
 
 
-def _principled(name: str, color, metallic: float, roughness: float) -> bpy.types.Material:
+def _principled(name: str, color, metallic: float, roughness: float, emission=None) -> bpy.types.Material:
     mat = bpy.data.materials.new(MATERIAL_PREFIX + name)
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     bsdf.inputs["Base Color"].default_value = (*color, 1.0)
     bsdf.inputs["Metallic"].default_value = metallic
     bsdf.inputs["Roughness"].default_value = roughness
+    if emission is not None:
+        bsdf.inputs["Emission Color"].default_value = (*emission, 1.0)
+        bsdf.inputs["Emission Strength"].default_value = 6.0
     mat.diffuse_color = (*color, 1.0)
     mat.metallic = metallic
     mat.roughness = roughness
@@ -45,6 +48,7 @@ def create_materials(params: dict) -> dict[str, bpy.types.Material]:
     return {
         "hull": _principled("Hull", hull_color, 0.5 - 0.3 * wear, 0.3 + 0.5 * wear),
         "accent": _principled("Accent", accent_color, 0.3, 0.4 + 0.3 * wear),
+        "glow": _principled("Glow", (0.0, 0.0, 0.0), 0.0, 0.5, emission=hex_to_rgb(params["engines"]["glow_color"])),
     }
 
 

@@ -1,0 +1,32 @@
+{
+  "seed": 11,
+  "class": "corvette",
+  "hull": {
+    "length": 60.0,
+    "width_ratio": 0.2,
+    "height_ratio": 0.7,
+    "segments": 10,
+    "taper": 0.2,
+    "nose_sharpness": 0.5,
+    "squareness": 0.4,
+    "variation": 0.4
+  },
+  "wings": {
+    "type": "straight",
+    "count": 2,
+    "span": 26.0,
+    "sweep_deg": 10
+  },
+  "engines": {
+    "count": 3,
+    "size": 4.0,
+    "glow_color": "#66ccff"
+  },
+  "greeble_density": 0.4,
+  "symmetry": true,
+  "style": {
+    "palette": "navy",
+    "wear": 0.3
+  },
+  "max_tris": 30000
+}

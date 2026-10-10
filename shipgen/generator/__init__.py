@@ -11,7 +11,7 @@ import bpy
 from mathutils import Vector
 
 from .. import params as params_mod
-from . import hull, materials
+from . import engines, hull, materials, wings
 
 COLLECTION_NAME = "ShipGen"
 
@@ -33,8 +33,7 @@ class Ship:
         for obj in self.parts:
             if obj.type != "MESH":
                 continue
-            mesh = obj.evaluated_get(depsgraph).to_mesh()
-            total += sum(len(p.vertices) - 2 for p in mesh.polygons)
+            total += _tri_count(obj.evaluated_get(depsgraph).to_mesh())
             obj.evaluated_get(depsgraph).to_mesh_clear()
         return total
 
@@ -51,8 +50,11 @@ class Ship:
         return lo, hi
 
     def stats(self) -> dict:
+        from .. import metrics
+
         lo, hi = self.bounds()
         return {
+            "top_view": metrics.top_view(self),
             "tris": self.tri_count(),
             "max_tris": self.params["max_tris"],
             "bbox_min": list(lo),
@@ -60,6 +62,10 @@ class Ship:
             "dimensions": list(hi - lo),
             "parts": [o.name for o in self.parts],
         }
+
+
+def _tri_count(mesh) -> int:
+    return sum(len(poly.vertices) - 2 for poly in mesh.polygons)
 
 
 def clear(collection_name: str = COLLECTION_NAME) -> None:
@@ -74,6 +80,7 @@ def clear(collection_name: str = COLLECTION_NAME) -> None:
             bpy.data.meshes.remove(data)
     bpy.data.collections.remove(coll)
     materials.remove_materials()
+    bpy.context.view_layer.update()  # drop stale entries of the removed objects
 
 
 def generate(raw_params: dict, collection_name: str = COLLECTION_NAME) -> Ship:
@@ -96,9 +103,26 @@ def generate(raw_params: dict, collection_name: str = COLLECTION_NAME) -> Ship:
     coll.objects.link(root)
 
     mats = materials.create_materials(p)
-    hull_obj = hull.build_hull(p, coll, parent=root)
+    hull_obj, shape = hull.build_hull(p, coll, parent=root)
     hull_obj.data.materials.append(mats["hull"])
+    parts = [hull_obj]
 
-    # TODO: wings, engines, greebles
+    wings_obj = wings.build_wings(p, shape, coll, parent=root)
+    if wings_obj is not None:
+        wings_obj.data.materials.append(mats["hull"])
+        parts.append(wings_obj)
 
-    return Ship(root=root, parts=[hull_obj], params=p, warnings=result.warnings)
+    warnings = list(result.warnings)
+    tris_left = p["max_tris"] - sum(_tri_count(o.data) for o in parts)
+    engine_count = min(p["engines"]["count"], max(tris_left // engines.TRIS_PER_ENGINE, 0))
+    if engine_count < p["engines"]["count"]:
+        warnings.append(f"engines.count reduced to {engine_count} to stay within max_tris")
+    engines_obj = engines.build_engines(p, shape, coll, parent=root, count=engine_count)
+    if engines_obj is not None:
+        engines_obj.data.materials.append(mats["accent"])
+        engines_obj.data.materials.append(mats["glow"])
+        parts.append(engines_obj)
+
+    # TODO: greebles
+
+    return Ship(root=root, parts=parts, params=p, warnings=warnings)

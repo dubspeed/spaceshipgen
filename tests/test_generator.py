@@ -27,9 +27,23 @@ def random_params(seed: int) -> dict:
     for key in ("width_ratio", "height_ratio", "taper", "nose_sharpness", "squareness", "variation"):
         spec = params.SCHEMA["hull"][key]
         p["hull"][key] = rng.uniform(spec.min, spec.max)
-    p["hull"]["length"] = rng.uniform(4, 120)
+    p["hull"]["length"] = length = rng.uniform(4, 120)
     p["hull"]["segments"] = rng.randint(3, 16)
+    p["wings"] = {
+        "type": rng.choice(params.WING_TYPES),
+        "count": rng.randint(0, 6),
+        "span": length * rng.uniform(0.0, 1.5),
+        "sweep_deg": rng.uniform(-45, 75),
+    }
+    p["engines"]["count"] = rng.randint(0, 8)
+    p["engines"]["size"] = length * rng.uniform(0.03, 0.2)
     return params.validate(p).params
+
+
+def silhouette_params(cls: str, seed: int) -> dict:
+    p = params.load(os.path.join(ROOT, "presets", f"{cls}.json")).params
+    p["seed"] = seed
+    return p
 
 
 @unittest.skipIf(bpy is None, "requires Blender (bpy)")
@@ -56,27 +70,27 @@ class GeneratorTest(unittest.TestCase):
                 self.assertGreater(stats["tris"], 0)
                 self.assertLessEqual(stats["tris"], p["max_tris"])
 
-                # bounding box plausible: length along Y, sane width and height
-                dx, dy, dz = stats["dimensions"]
+                # hull spans exactly the hull length; the whole ship stays plausible
+                hull = ship.parts[0]
                 length = p["hull"]["length"]
-                self.assertAlmostEqual(dy, length, delta=length * 0.01)
+                self.assertAlmostEqual(hull.dimensions.y, length, delta=length * 0.001)
+                dx, dy, dz = stats["dimensions"]
                 self.assertGreater(dx, 0.02 * length)
-                self.assertLess(dx, 1.6 * length)
+                self.assertLess(dx, 3.0 * length)
+                self.assertLess(dy, 1.6 * length)
                 self.assertGreater(dz, 0.01 * length)
-                self.assertLess(dz, 1.6 * length)
-                for lo, hi in zip(stats["bbox_min"], stats["bbox_max"]):
-                    self.assertLess(abs(lo + hi) / 2, length)  # roughly centred
+                self.assertLess(dz, 2.0 * length)
 
-                # closed, consistent mesh
-                bm = bmesh.new()
-                bm.from_mesh(ship.parts[0].data)
-                self.assertTrue(all(e.is_manifold for e in bm.edges), "hull has open/non-manifold edges")
-                self.assertFalse(any(f.calc_area() <= 0 for f in bm.faces), "degenerate faces")
-                bm.free()
-
-                if p["symmetry"]:
-                    xs = sorted(round(v.co.x, 4) for v in ship.parts[0].data.vertices)
-                    self.assertEqual(xs, sorted(-x + 0.0 for x in xs), "hull not mirror symmetric")
+                for part in ship.parts:
+                    bm = bmesh.new()
+                    bm.from_mesh(part.data)
+                    self.assertTrue(all(e.is_manifold for e in bm.edges), f"{part.name}: open edges")
+                    self.assertFalse(any(f.calc_area() <= 1e-9 for f in bm.faces), f"{part.name}: degenerate faces")
+                    bm.free()
+                    self.assertFalse(any(poly.use_smooth for poly in part.data.polygons), "expected flat shading")
+                    if p["symmetry"]:
+                        xs = sorted(round(v.co.x, 4) + 0.0 for v in part.data.vertices)
+                        self.assertEqual(xs, sorted(-x + 0.0 for x in xs), f"{part.name} not mirror symmetric")
 
     def test_same_seed_same_ship(self):
         p = random_params(5)
@@ -93,9 +107,10 @@ class GeneratorTest(unittest.TestCase):
     def test_regenerate_replaces_previous_ship(self):
         for seed in (1, 2, 3):
             self.generator.generate(dict(params.defaults(), seed=seed))
-        self.assertEqual(len(bpy.data.collections["ShipGen"].objects), 2)  # root + hull
-        self.assertEqual(sum(1 for o in bpy.data.objects if o.name.startswith("Ship_Hull")), 1)
-        self.assertEqual(sum(1 for m in bpy.data.meshes if m.name.startswith("Ship_Hull")), 1)
+        names = sorted(o.name for o in bpy.data.collections["ShipGen"].objects)
+        self.assertEqual(names, ["Ship", "Ship_Engines", "Ship_Hull", "Ship_Wings"])
+        self.assertEqual(sorted(o.name for o in bpy.data.objects if o.name.startswith("Ship_")), names[1:])
+        self.assertEqual(sorted(m.name for m in bpy.data.meshes), names[1:])
 
     def test_accepts_raw_params(self):
         ship = self.generator.generate({"hull": {"length": 1e6}, "class": "nope"})
@@ -103,16 +118,33 @@ class GeneratorTest(unittest.TestCase):
         self.assertEqual(len(ship.warnings), 2)
 
 
-class ResolutionTest(unittest.TestCase):
-    @unittest.skipIf(bpy is None, "requires Blender (bpy)")
-    def test_choose_resolution_respects_budget(self):
-        from shipgen.generator.hull import choose_resolution
+    def test_no_wings_no_engines(self):
+        p = dict(params.defaults(), wings={"type": "none", "count": 2, "span": 9, "sweep_deg": 0})
+        p["engines"] = dict(p["engines"], count=0)
+        ship = self.generator.generate(p)
+        self.assertEqual([o.name for o in ship.parts], ["Ship_Hull"])
 
-        for segments in range(3, 17):
-            for max_tris in (500, 1000, 15000, 500000):
-                budget = int(max_tris * 0.6)
-                verts, rings = choose_resolution(segments, budget)
-                self.assertLessEqual(2 * verts * rings, budget, (segments, max_tris))
+    def test_classes_have_distinct_top_silhouettes(self):
+        """Top view: darts (fighter, interceptor) fill little of their bounding box,
+        the freighter brick fills most of it."""
+        fill = {}
+        for cls in ("fighter", "interceptor", "freighter"):
+            fill[cls] = [self.generator.generate(silhouette_params(cls, s)).stats()["top_view"]["fill"]
+                         for s in range(1, 6)]
+        with self.subTest(fill=fill):
+            self.assertLess(max(fill["fighter"]), 0.55)
+            self.assertLess(max(fill["interceptor"]), 0.45)
+            self.assertGreater(min(fill["freighter"]), 0.7)
+
+    def test_low_budget_stays_within_max_tris(self):
+        for cls in params.SHIP_CLASSES:
+            p = dict(params.defaults(), max_tris=500)
+            p["class"] = cls
+            p["hull"] = dict(p["hull"], segments=16)
+            p["engines"] = dict(p["engines"], count=8)
+            p["wings"] = dict(p["wings"], count=6)
+            with self.subTest(cls=cls):
+                self.assertLessEqual(self.generator.generate(p).stats()["tris"], 500)
 
 
 if __name__ == "__main__":

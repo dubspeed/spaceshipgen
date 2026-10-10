@@ -1,6 +1,7 @@
 """Run the test suite inside Blender.
 
     blender -b --factory-startup -P tests/run_blender.py [-- -k pattern]
+    python tests/run_blender.py [-k pattern]      # with the bpy module from PyPI
 
 Exits with a non-zero code if any test fails.
 """
@@ -12,7 +13,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-argv = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
+argv = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else sys.argv[1:] if sys.argv[0].endswith(".py") else []
 patterns = argv[argv.index("-k") + 1 :][:1] if "-k" in argv else []
 
 loader = unittest.TestLoader()

@@ -4,8 +4,6 @@ Scene properties are generated from ``params.SCHEMA`` so the panel, the CLI
 and the AI prompt always share the same parameters and limits.
 """
 
-from __future__ import annotations
-
 import json
 import os
 import random

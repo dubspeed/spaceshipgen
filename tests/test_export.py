@@ -45,7 +45,7 @@ class ExportTest(unittest.TestCase):
         cls.tmp.cleanup()
 
     def test_all_files_written(self):
-        self.assertEqual(set(self.files), {"glb", "blend", "png"})
+        self.assertEqual(set(self.files), {"glb", "blend", "png", "png_top"})
         for path in self.files.values():
             self.assertTrue(os.path.isfile(path), path)
             self.assertGreater(os.path.getsize(path), 0, path)
@@ -53,31 +53,36 @@ class ExportTest(unittest.TestCase):
     def test_glb_contains_only_the_ship(self):
         gltf = read_glb_json(self.files["glb"])
         names = {n["name"] for n in gltf["nodes"]}
-        self.assertEqual(names, {"Ship", "Ship_Hull"})
-        self.assertEqual(len(gltf["meshes"]), 1)
-        self.assertEqual(gltf["materials"][0]["name"], "ShipGen_Hull")
+        self.assertEqual(names, {"Ship", "Ship_Hull", "Ship_Wings", "Ship_Engines"})
+        self.assertEqual(len(gltf["meshes"]), 3)
+        materials = {m["name"]: m for m in gltf["materials"]}
+        self.assertEqual(set(materials), {"ShipGen_Hull", "ShipGen_Accent", "ShipGen_Glow"})
+        self.assertGreater(max(materials["ShipGen_Glow"]["emissiveFactor"]), 0)
         # triangle count survives the export
-        prim = gltf["meshes"][0]["primitives"][0]
-        indices = gltf["accessors"][prim["indices"]]["count"]
+        indices = sum(
+            gltf["accessors"][prim["indices"]]["count"] for mesh in gltf["meshes"] for prim in mesh["primitives"]
+        )
         self.assertEqual(indices // 3, self.tris)
 
     def test_png(self):
-        with open(self.files["png"], "rb") as f:
-            header = f.read(24)
-        self.assertEqual(header[:8], b"\x89PNG\r\n\x1a\n")
-        width, height = struct.unpack(">II", header[16:24])
-        self.assertEqual((width, height), (160, 90))
+        for key in ("png", "png_top"):
+            with open(self.files[key], "rb") as f:
+                header = f.read(24)
+            self.assertEqual(header[:8], b"\x89PNG\r\n\x1a\n")
+            width, height = struct.unpack(">II", header[16:24])
+            self.assertEqual((width, height), (160, 90))
 
     def test_png_is_not_empty_background(self):
-        img = bpy.data.images.load(self.files["png"])
-        try:
-            px = list(img.pixels)
-        finally:
-            bpy.data.images.remove(img)
-        lum = [0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2] for i in range(0, len(px), 4)]
-        background = lum[0]  # corner pixel
-        lit = sum(1 for v in lum if v > background + 0.05)
-        self.assertGreater(lit / len(lum), 0.05, "ship hardly visible in preview")
+        for key in ("png", "png_top"):
+            img = bpy.data.images.load(self.files[key])
+            try:
+                px = list(img.pixels)
+            finally:
+                bpy.data.images.remove(img)
+            lum = [0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2] for i in range(0, len(px), 4)]
+            background = lum[0]  # corner pixel
+            lit = sum(1 for v in lum if v > background + 0.05)
+            self.assertGreater(lit / len(lum), 0.05, f"ship hardly visible in {key}")
 
     def test_blend_reloads(self):
         with bpy.data.libraries.load(self.files["blend"]) as (src, _dst):

@@ -6,15 +6,27 @@
     "width_ratio": 0.35,
     "height_ratio": 0.5,
     "segments": 6,
-    "taper": 0.6,
+    "taper": 0.2,
     "nose_sharpness": 0.75,
     "squareness": 0.3,
     "variation": 0.3
   },
-  "wings": { "type": "delta", "count": 2, "span": 9.0, "sweep_deg": 35 },
-  "engines": { "count": 2, "size": 1.2, "glow_color": "#44aaff" },
+  "wings": {
+    "type": "delta",
+    "count": 2,
+    "span": 9.0,
+    "sweep_deg": 35
+  },
+  "engines": {
+    "count": 2,
+    "size": 1.2,
+    "glow_color": "#44aaff"
+  },
   "greeble_density": 0.4,
   "symmetry": true,
-  "style": { "palette": "military_grey", "wear": 0.3 },
+  "style": {
+    "palette": "military_grey",
+    "wear": 0.3
+  },
   "max_tris": 15000
 }
