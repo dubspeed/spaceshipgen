@@ -1,0 +1,20 @@
+{
+  "seed": 7,
+  "class": "freighter",
+  "hull": {
+    "length": 40.0,
+    "width_ratio": 0.3,
+    "height_ratio": 0.8,
+    "segments": 8,
+    "taper": 0.2,
+    "nose_sharpness": 0.2,
+    "squareness": 0.7,
+    "variation": 0.5
+  },
+  "wings": { "type": "none", "count": 0, "span": 0.0, "sweep_deg": 0 },
+  "engines": { "count": 4, "size": 3.0, "glow_color": "#ffaa44" },
+  "greeble_density": 0.7,
+  "symmetry": true,
+  "style": { "palette": "desert", "wear": 0.7 },
+  "max_tris": 30000
+}
