@@ -1,4 +1,4 @@
-"""Cargo / ore / tank / habitat module designs in unit size for side sockets.
+"""Cargo / ore / tank / habitat module designs in unit size for side and roof sockets.
 
 Local frame at the socket: ``n`` = socket normal (out of the hull), ``t`` = along
 the ship (+Y), ``u`` = up (+Z). Contract (the module's build space):
@@ -21,7 +21,10 @@ class Frame:
     def __init__(self, pos, normal, m):
         self.o, self.n, self.m = Vector(pos), Vector(normal).normalized(), m
         self.t = Vector((0, 1, 0))
-        self.u = Vector((0, 0, 1))
+        if abs(self.n.z) > 0.9:  # roof socket: "up" of the module points outboard, so mirrored
+            self.u = Vector((1.0 if self.o.x >= 0 else -1.0, 0, 0))  # sockets give mirrored modules
+        else:
+            self.u = Vector((0, 0, 1))
 
     def p(self, n, t, u):
         return self.o + (self.n * n + self.t * t + self.u * u) * self.m

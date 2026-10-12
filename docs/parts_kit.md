@@ -68,7 +68,9 @@ damit später Teile tauschen (Triebwerk nachrüsten), ohne neu zu generieren.
 - **10 Module** (`kit/module_designs.py`): Container (Kiste, gerippt, Doppel), Erz (Hopper, Skip),
   Tanks (Zylinder, Zwilling, Kugeln), Habitat (Trommel, Block). Bauraum je Seitensockel:
   Tiefe 1 × Länge 2 × Höhe 1, immer paarweise gespiegelt. Bei Seitenkästen sitzen sie außen
-  an den Kästen.
+  an den Kästen. Reihenfolge: erst Seitensockel, dann **Dachsockel** (Mono: zwei gespiegelte
+  Reihen auf dem Dach, wenn es breit genug ist; Twin: eine Reihe pro Rumpf). Auf dem Dach
+  zeigt das „oben“ des Moduls nach außen, damit gespiegelte Sockel gespiegelte Module tragen.
 
 ## 4. Kollisionen
 

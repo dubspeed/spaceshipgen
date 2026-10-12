@@ -32,7 +32,7 @@ def main():
     args = ap.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:])
     bpy.ops.wm.read_factory_settings(use_empty=True)
     base = params.load(os.path.join(ROOT, "presets", "miner_m.json")).params
-    base = dict(base, spread=0, cargo=dict(base["cargo"], modules=8, size=0.8),
+    base = dict(base, spread=0, cargo=dict(base["cargo"], modules=12, size=0.8),
                 mining=dict(base["mining"], size=1.0))
 
     pairs = collections.Counter()
@@ -60,7 +60,7 @@ def main():
     lines = [
         "# Parts-kit collision report",
         "",
-        f"{builds} builds (240 hulls x 4 rig kinds x 4 cargo kinds, stress loadout: 8 modules at size 0.8, rig size 1.0).",
+        f"{builds} builds (240 hulls x 4 rig kinds x 4 cargo kinds, stress loadout: 12 modules at size 0.8, rig size 1.0).",
         "",
         f"- ships with at least one collision before resolving: **{ships_with_conflict}** "
         f"({100 * ships_with_conflict / builds:.1f} %)",

@@ -112,7 +112,7 @@ class KitShipTest(unittest.TestCase):
             rig = ("drill", "laser", "claw", "scoop")[i % 4]
             cargo = ("containers", "hoppers", "tanks", "habitat")[(i // 4) % 4]
             p = dict(self.base, mining=dict(self.base["mining"], type=rig, size=1.0),
-                     cargo=dict(self.base["cargo"], type=cargo, modules=8, size=0.8))
+                     cargo=dict(self.base["cargo"], type=cargo, modules=12, size=0.8))
             with self.subTest(design=f"{plan}/{tail}/{mid}/{nose}", rig=rig, cargo=cargo):
                 ship = self.kit.build(p, plan=plan, tail=tail, mid=mid, nose=nose)
                 self.assertEqual(ship.conflicts, [])

@@ -119,6 +119,27 @@ def _side_sockets(layout: HullLayout, length: float, module: float, x_c: float, 
     return out
 
 
+def _top_sockets(layout: HullLayout, length: float, module: float, chamfer: float, ridge: float, single=False):
+    """Roof sockets along the mid section: a mirrored pair of rows on the roof, or one row on
+    the centre line of a twin hull (``single``; its twin provides the mirror)."""
+    y_a, y_b = layout.y_mid
+    span = y_b - y_a
+    out = []
+    probe = section_at(layout, 0.5 * (y_a + y_b), length)
+    roof_w = probe.half_width * (1.0 - 0.7 * chamfer)  # half width of the flat roof
+    m = min(module, (2.0 if single else 0.9) * roof_w * 0.9)
+    if m < 0.25 * module:
+        return out  # roof too narrow
+    cols = max(int(span // (2.2 * m)), 1)
+    for c in range(cols):
+        y = y_a + span * (c + 0.5) / cols
+        top = max(section_at(layout, yy, length).top for yy in (y - m, y, y + m))
+        xs = (0.0,) if single else (0.55 * m, -0.55 * m)
+        for x in xs:
+            out.append(Socket("top", Vector((layout.x_offset + x, y, top)), Vector((0, 0, 1)), m))
+    return out
+
+
 # ---------------------------------------------------------------- assembly
 
 def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_design=None, rig_design=None,
@@ -189,6 +210,7 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
             for a, c, rr in py:
                 col_extras.append(_grab(parts_bm, lambda a=a, c=c, rr=rr: shapes.beam(parts_bm, a, c, 0.5 * rr, 0.25 * rr, 0)))
             sockets += _side_sockets(b, length, module, b.x_offset, outer_only_sign=1 if b.x_offset > 0 else -1)
+            sockets += _top_sockets(b, length, module, chamfer, ridge, single=True)
         if n_eng % 2:
             warnings.append("twin hulls need an even engine count; one engine dropped")
         sockets.append(Socket("nose", Vector((0, lay.y_mid[1], 0.0)), Vector((0, 1, 0)), 0.45 * gap))
@@ -227,6 +249,7 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
                     sockets.append(Socket("side", Vector((s * x_out, y, 0.0)), Vector((s, 0, 0)), module))
         else:
             sockets += _side_sockets(lay, length, module, 0.0)
+        sockets += _top_sockets(lay, length, module, chamfer, ridge)
         if design.plan == "fork":
             pw = 0.3 * front.half_width
             for s in (1, -1):
@@ -275,10 +298,13 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
     if module_design is None and cargo_kind != "none":
         module_design = pick.choice(module_designs.designs_of(cargo_kind))
     wanted = p["cargo"]["modules"] if cargo_kind != "none" else 0
-    # modules go on mirrored socket pairs (front to back), so the ship stays symmetric
-    sides = sorted((s for s in sockets if s.kind == "side"), key=lambda s: (-s.pos.y, abs(s.pos.x), s.pos.x))
+    # modules go on mirrored socket pairs (front to back), sides first, then the roof
+    def pairs_of(kind):
+        socks = sorted((s for s in sockets if s.kind == kind), key=lambda s: (-s.pos.y, abs(s.pos.x), s.pos.x))
+        return [socks[i:i + 2] for i in range(0, len(socks) - 1, 2)]
+
     placed = 0
-    for pair in (sides[i:i + 2] for i in range(0, len(sides) - 1, 2)):
+    for pair in pairs_of("side") + pairs_of("top"):
         if placed + 2 > wanted:
             break
         for sk in pair:
@@ -286,7 +312,7 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
                                                                                     sk.normal, sk.radius), sk)
         placed += 2
     if placed < wanted:
-        warnings.append(f"cargo.modules: placed {placed} of {wanted} (pairs only, limited by side sockets)")
+        warnings.append(f"cargo.modules: placed {placed} of {wanted} (pairs only, limited by side and roof sockets)")
 
     conflicts = find_conflicts(instances, obstacles)
     if resolve:
