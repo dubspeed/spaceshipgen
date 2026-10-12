@@ -199,10 +199,11 @@ def _validate(data: Any, schema: dict, prefix: str, warnings: list[str]) -> dict
     return out
 
 
-def validate(data: Any) -> ValidationResult:
-    """Validate (and repair) a parameter dict. Missing values get defaults."""
+def validate(data: Any, schema: dict | None = None) -> ValidationResult:
+    """Validate (and repair) a parameter dict against ``schema`` (default: the ship schema).
+    Missing values get defaults."""
     warnings: list[str] = []
-    params = _validate(data, SCHEMA, "", warnings)
+    params = _validate(data, SCHEMA if schema is None else schema, "", warnings)
     return ValidationResult(params, warnings)
 
 

@@ -152,6 +152,21 @@ direkt importieren. Sie enthält:
   für ein fliegendes Schiff die `CollisionShape3D`-Kinder unter den eigenen `RigidBody3D` /
   `CharacterBody3D` hängen (von Hand oder per Import-Skript).
 
+## Asteroiden (Prototyp)
+
+Asteroiden aus Erz, Metall oder Eis, vorgebrochen in konvexe Brocken bis zu einer
+Mindestgröße – jeder Brocken ist in Godot direkt seine eigene Collision-Shape, Werte (Masse,
+Ertrag, Härte) kommen wie bei den Schiffen aus der Geometrie.
+
+```bash
+.venv/bin/python cli.py --asteroid ore_m
+.venv/bin/python cli.py --asteroid all --no-blend
+```
+
+Details, Hierarchie in Godot und Werte: [`docs/asteroids/README.md`](docs/asteroids/README.md).
+
+![Asteroiden](docs/asteroids/types.png)
+
 ## Entwicklung
 
 ```bash

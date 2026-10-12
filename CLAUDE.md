@@ -94,6 +94,12 @@ same class, mining and cargo type share the seed streams).
   Every new part design must honour the unit contract in its module docstring
   (`EngineDesignTest`, `ModuleDesignTest` check it); new hull
   blocks must also be added to `params.KIT_*` (test checks it).
+- `shipgen/asteroids/` – asteroid generator (prototype, `docs/asteroids/README.md`): own schema
+  (`params.py`, same `Field`/`validate` machinery), `geometry.py` (convex polytopes as point
+  lists: hull, half-space clip, Voronoi cells), `__init__.py` (`generate`: faceted rock,
+  pre-fractured into convex chunks level by level down to `min_chunk_m`; every chunk is a
+  `-convcol` mesh, deeper levels parented under their chunk and hidden; per-chunk stats from
+  the mesh; `COMPOSITION` = ore/metal/ice constants). Presets in `presets/asteroids/`.
 - `shipgen/metrics.py` – top-view silhouette metrics (numpy rasteriser).
 - `shipgen/export.py` – `.glb`, `.blend`, Cycles previews (`three_quarter` and orthographic `top`).
 - `shipgen/ui.py` – sidebar panel "ShipGen"; properties generated from the schema
@@ -148,6 +154,9 @@ python3 scripts/stats_table.py /tmp/l/*.json
 .venv/bin/python scripts/kit_demo.py [--only parts,ships,matrix,colliders]
 # hull detail before/after sheets (docs/hull_detail/)
 .venv/bin/python scripts/hull_detail_demo.py
+# asteroids: CLI (presets/asteroids/), demo sheets (docs/asteroids/)
+.venv/bin/python cli.py --asteroid ore_m
+.venv/bin/python scripts/asteroid_demo.py
 # installable extension zip -> dist/
 python3 scripts/build_extension.py
 ```

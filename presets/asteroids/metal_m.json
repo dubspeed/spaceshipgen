@@ -1,0 +1,10 @@
+{
+  "composition": "metal",
+  "shape": "elongated",
+  "size_m": 22,
+  "seed": 21,
+  "chunks": 6,
+  "richness": 0.4,
+  "facets": 16,
+  "min_chunk_m": 4.0
+}

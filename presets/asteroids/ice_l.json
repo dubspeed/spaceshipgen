@@ -1,0 +1,10 @@
+{
+  "composition": "ice",
+  "shape": "elongated",
+  "size_m": 42,
+  "seed": 32,
+  "chunks": 9,
+  "richness": 0.8,
+  "facets": 30,
+  "min_chunk_m": 4.0
+}

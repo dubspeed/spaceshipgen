@@ -57,6 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     src = ap.add_mutually_exclusive_group()
     src.add_argument("--params", help="path to a parameter JSON file")
     src.add_argument("--preset", help="preset name(s) in presets/ without .json: 'fighter', 'miner_s,miner_m' or 'all'")
+    src.add_argument("--asteroid", help="asteroid preset name(s) in presets/asteroids/: 'ore_m', 'ore_m,ice_l' or 'all'")
     ap.add_argument("--out", default=os.path.join(ROOT, "output"), help="output directory")
     ap.add_argument("--name", help="output file base name (default: <preset>_<seed>)")
     ap.add_argument("--seed", type=int, help="override the seed")
@@ -90,12 +91,13 @@ def load_jobs(args: argparse.Namespace) -> list[tuple[str, dict]]:
     if args.params:
         with open(args.params, encoding="utf-8") as f:
             return [(os.path.splitext(os.path.basename(args.params))[0], json.load(f))]
-    names = [n.strip() for n in (args.preset or "fighter").split(",") if n.strip()]
+    folder = os.path.join(PRESET_DIR, "asteroids") if args.asteroid else PRESET_DIR
+    names = [n.strip() for n in (args.asteroid or args.preset or "fighter").split(",") if n.strip()]
     if names == ["all"]:
-        names = sorted(os.path.splitext(n)[0] for n in os.listdir(PRESET_DIR) if n.endswith(".json"))
+        names = sorted(os.path.splitext(n)[0] for n in os.listdir(folder) if n.endswith(".json"))
     jobs = []
     for name in names:
-        with open(os.path.join(PRESET_DIR, name + ".json"), encoding="utf-8") as f:
+        with open(os.path.join(folder, name + ".json"), encoding="utf-8") as f:
             jobs.append((name, json.load(f)))
     return jobs
 
@@ -103,7 +105,12 @@ def load_jobs(args: argparse.Namespace) -> list[tuple[str, dict]]:
 def run(args: argparse.Namespace) -> list[dict]:
     import bpy
 
-    from shipgen import export, generator, params
+    from shipgen import asteroids, export
+    from shipgen import generator as ship_generator
+    from shipgen import params as ship_params
+
+    # same pipeline for both: asteroids bring their own schema and generator
+    params, generator = (asteroids.params, asteroids) if args.asteroid else (ship_params, ship_generator)
 
     jobs = load_jobs(args)
     width, height = (int(v) for v in args.resolution.lower().split("x"))
@@ -130,7 +137,8 @@ def run(args: argparse.Namespace) -> list[dict]:
                 ship, args.out, name, glb=not args.no_glb, blend=not args.no_blend,
                 views=views, resolution=(width, height), samples=args.samples, frame=args.frame,
             )
-            result = {"name": name, "seed": seed, "files": files, "stats": ship.stats(), "warnings": ship.warnings}
+            stats = ship.stats if args.asteroid else ship.stats()
+            result = {"name": name, "seed": seed, "files": files, "stats": stats, "warnings": ship.warnings}
             os.makedirs(args.out, exist_ok=True)
             with open(os.path.join(args.out, name + ".json"), "w", encoding="utf-8") as f:
                 json.dump({"model": base_name, "model_params": checked.params, "params": ship.params,

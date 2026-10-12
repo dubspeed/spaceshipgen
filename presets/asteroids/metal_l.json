@@ -1,0 +1,10 @@
+{
+  "composition": "metal",
+  "shape": "round",
+  "size_m": 36,
+  "seed": 22,
+  "chunks": 8,
+  "richness": 0.35,
+  "facets": 18,
+  "min_chunk_m": 4.0
+}

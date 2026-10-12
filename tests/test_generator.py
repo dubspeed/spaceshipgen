@@ -232,7 +232,7 @@ class GeneratorTest(unittest.TestCase):
         self.assertTrue(any(w.startswith("cargo.modules reduced") for w in ship.warnings), ship.warnings)
 
     def test_presets_generate_cleanly(self):
-        for name in sorted(os.listdir(os.path.join(ROOT, "presets"))):
+        for name in sorted(n for n in os.listdir(os.path.join(ROOT, "presets")) if n.endswith(".json")):
             with self.subTest(preset=name):
                 ship = self.generator.generate(params.load(os.path.join(ROOT, "presets", name)).params)
                 self.assertEqual(ship.warnings, [])

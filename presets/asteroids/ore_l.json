@@ -1,0 +1,9 @@
+{
+  "composition": "ore",
+  "shape": "binary",
+  "size_m": 40,
+  "seed": 13,
+  "chunks": 9,
+  "richness": 0.5,
+  "min_chunk_m": 4.0
+}

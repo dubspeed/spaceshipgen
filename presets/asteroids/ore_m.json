@@ -1,0 +1,9 @@
+{
+  "composition": "ore",
+  "shape": "round",
+  "size_m": 24,
+  "seed": 12,
+  "chunks": 7,
+  "richness": 0.55,
+  "min_chunk_m": 4.0
+}

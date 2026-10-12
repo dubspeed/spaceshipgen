@@ -22,16 +22,25 @@ def _select_only(objects) -> None:
 
 
 def export_glb(ship, path: str) -> str:
+    """Export ``ship.objects`` (a ship or an asteroid). Objects hidden in the viewport (an
+    asteroid's deeper chunk levels) are unhidden for the export: hidden ones can't be selected."""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    _select_only(ship.objects)
-    bpy.ops.export_scene.gltf(
-        filepath=path,
-        export_format="GLB",
-        use_selection=True,
-        export_apply=True,
-        export_yup=True,
-        export_extras=True,  # custom properties: root["shipgen"] holds params summary + stats
-    )
+    hidden = [o for o in ship.objects if o.hide_viewport]
+    for obj in hidden:
+        obj.hide_viewport = False
+    try:
+        _select_only(ship.objects)
+        bpy.ops.export_scene.gltf(
+            filepath=path,
+            export_format="GLB",
+            use_selection=True,
+            export_apply=True,
+            export_yup=True,
+            export_extras=True,  # custom properties: root["shipgen"] holds params summary + stats
+        )
+    finally:
+        for obj in hidden:
+            obj.hide_viewport = True
     return path
 
 
