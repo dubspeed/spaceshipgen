@@ -21,7 +21,7 @@ Asteroidenbergbau, Fracht und Transport. Jedes Schiff entsteht aus einem Paramet
 
 Voraussetzung: **Blender 4.2 oder neuer** (entwickelt und getestet mit 5.x).
 
-1. Extension bauen: `python3 scripts/build_extension.py` → `dist/shipgen-0.1.0.zip`
+1. Extension bauen: `python3 scripts/build_extension.py` → `dist/shipgen-<version>.zip`
 2. In Blender: *Edit → Preferences → Get Extensions →* Pfeil-Menü oben rechts →
    *Install from Disk…* → die Zip auswählen.
 3. Im 3D-Viewport mit `N` die Seitenleiste öffnen, Reiter **ShipGen**:
