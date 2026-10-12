@@ -252,7 +252,7 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
 
     hull_bm = bmesh.new()
     parts_bm = bmesh.new()  # engines, pylons, rigs, modules (material 0 accent, 1 glow, 2 cargo)
-    hull = _build_hull(p, design, fr, hull_bm, parts_bm)
+    hull = _build_hull(p, cls, design, fr, hull_bm, parts_bm)
     rig_design, module_design, instances = _place_parts(p, stream, design, fr, hull, parts_bm, engine_design,
                                                         rig_design, module_design)
     warnings = hull.warnings
@@ -315,7 +315,7 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
     return ship
 
 
-def _build_hull(p, design: Design, fr: _Frame, hull_bm, parts_bm) -> _Hull:
+def _build_hull(p, cls, design: Design, fr: _Frame, hull_bm, parts_bm) -> _Hull:
     """Loft the bodies and their add-ons; collect sockets, obstacles and collision pieces."""
     length, body_height, chamfer, ridge, module = fr.length, fr.body_height, fr.chamfer, fr.ridge, fr.module
     n_eng, r_req = p["engines"]["count"], 0.5 * p["engines"]["size"]
@@ -398,6 +398,9 @@ def _build_hull(p, design: Design, fr: _Frame, hull_bm, parts_bm) -> _Hull:
         else:
             h.sockets += _side_sockets(lay, length, module, 0.0)
         h.sockets += _top_sockets(lay, length, module, chamfer, ridge)
+        if cls in BRIDGE_CLASSES and length >= BRIDGE_MIN_LENGTH:
+            for fn, box in _bridge(hull_bm, lay, fr):
+                add_on(h, hull_bm, fn, box)
         if design.plan == "fork":
             pw = 0.3 * front.half_width
             y0, y1 = lay.y_front - 0.08 * length, lay.y_front + 0.22 * length
@@ -415,6 +418,33 @@ def _build_hull(p, design: Design, fr: _Frame, hull_bm, parts_bm) -> _Hull:
     for i, sk in enumerate(h.sockets):
         sk.name = sk.name or f"Socket_{sk.kind}_{i}"
     return h
+
+
+BRIDGE_CLASSES = {"freighter", "miner"}
+BRIDGE_MIN_LENGTH = 20.0
+
+
+def _bridge(hull_bm, lay: HullLayout, fr: _Frame):
+    """Command bridge on the tail roof, like a cargo ship's: a deck house with a raised bridge
+    and a lit window band facing forward. Pure looks (hull stats come from the reference hull);
+    it stays behind the mid section, so roof modules never reach it. Yields (builder, obstacle)."""
+    y_a = lay.y_mid[0]
+    span = y_a - lay.y_tail
+    y0, y1 = lay.y_tail + 0.2 * span, y_a - 0.05 * span
+    sts = [section_at(lay, y, fr.length) for y in (y0, 0.5 * (y0 + y1), y1)]
+    roof_w = min(st.half_width for st in sts) * (1.0 - 0.7 * fr.chamfer)
+    roof_z = min(st.top for st in sts) * (1.0 - 0.6 * fr.ridge)
+    sink = 0.05 * fr.body_height  # sits into the roof, so no gap shows on ridged roofs
+    h1, h2 = 0.24 * fr.body_height, 0.22 * fr.body_height
+    deck = (Vector((0, 0.5 * (y0 + y1), roof_z + 0.5 * (h1 - sink))), Vector((1.3 * roof_w, y1 - y0, h1 + sink)))
+    yb0 = y0 + 0.45 * (y1 - y0)  # the raised bridge sits on the front of the deck house
+    top_z = roof_z + h1 - 0.5 * sink
+    house = (Vector((0, 0.5 * (yb0 + y1), top_z + 0.5 * h2)), Vector((0.8 * roof_w, y1 - yb0, h2 + 0.5 * sink)))
+    window = (Vector((0, y1 + 0.01 * span, top_z + 0.6 * h2)), Vector((0.7 * roof_w, 0.04 * span, 0.3 * h2)))
+    applies = {"module", "engine", "wing", "rig"}
+    for (c, size), mat in ((deck, 0), (house, 0), (window, 1)):
+        yield (lambda c=c, size=size, mat=mat: shapes.box(hull_bm, c, size, material=mat),
+               Box("bridge_house", c - size / 2, c + size / 2, applies))
 
 
 def _place_parts(p, stream, design, fr: _Frame, hull: _Hull, parts_bm, engine_design, rig_design, module_design):
@@ -496,7 +526,7 @@ def _role_objects(p, coll, root, hull_bm, parts_bm, instances, pylon_verts) -> l
     for inst in instances:
         if inst.live:
             role_verts.setdefault(ROLE_OF[inst.kind], set()).update(v.index for v in inst.verts)
-    pieces = [("Ship_Hull", "hull", hull_bm, ("hull",))]
+    pieces = [("Ship_Hull", "hull", hull_bm, ("hull", "glow"))]  # glow: bridge windows
     for role, idx in role_verts.items():
         if not idx:
             continue

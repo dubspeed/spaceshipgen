@@ -2,8 +2,8 @@
   "seed": 103,
   "class": "miner",
   "hull": {
-    "length": 26,
-    "width_ratio": 0.32,
+    "length": 32,
+    "width_ratio": 0.26,
     "height_ratio": 0.8,
     "segments": 6,
     "taper": 0.2,
@@ -38,5 +38,8 @@
     "palette": "industrial_yellow",
     "wear": 0.4
   },
-  "max_tris": 20000
+  "max_tris": 20000,
+  "kit": {
+    "mid": "sponson"
+  }
 }

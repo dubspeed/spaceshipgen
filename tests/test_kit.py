@@ -42,6 +42,49 @@ class EngineDesignTest(unittest.TestCase):
 
 
 @unittest.skipIf(bpy is None, "requires Blender (bpy)")
+class ModuleDesignTest(unittest.TestCase):
+    def build(self, i, pos, normal):
+        from shipgen.kit import module_designs as md
+
+        bm = bmesh.new()
+        md.build(bm, i, pos, normal, 1.0)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        return bm
+
+    def test_designs_honour_the_build_space(self):
+        """Side socket (+X) and roof socket (+Z, right of the centre line): closed, inside the box."""
+        from shipgen.kit import module_designs as md
+
+        for i, name in enumerate(md.NAMES):
+            for where, pos, normal in (("side", (0, 0, 0), (1, 0, 0)), ("roof", (0.5, 0, 0), (0, 0, 1))):
+                with self.subTest(design=name, socket=where):
+                    bm = self.build(i, pos, normal)
+                    self.assertTrue(all(e.is_manifold for e in bm.edges), "open edges")
+                    self.assertFalse(any(f.calc_area() <= 1e-9 for f in bm.faces), "degenerate faces")
+                    for v in bm.verts:
+                        x, y, z = v.co
+                        out, across = (x, z) if where == "side" else (z, x - 0.5)
+                        self.assertGreaterEqual(out, -md.EMBED - 1e-6)
+                        self.assertLessEqual(out, md.DEPTH + 1e-6)
+                        self.assertLessEqual(abs(y), md.HALF_LENGTH + 1e-6)
+                        self.assertLessEqual(abs(across), md.HALF_HEIGHT + 1e-6)
+                    bm.free()
+
+    def test_upright_bins_keep_their_volume_on_the_roof(self):
+        """Stats are normalised on side sockets, so a roof bin must hold exactly as much."""
+        from shipgen.kit import module_designs as md
+
+        for name in md.UPRIGHT:
+            i = md.NAMES.index(name)
+            side, roof = self.build(i, (0, 0, 0), (1, 0, 0)), self.build(i, (0.5, 0, 0), (0, 0, 1))
+            self.assertAlmostEqual(side.calc_volume(), roof.calc_volume(), places=5)
+            top = max(v.co.z for f in roof.faces if f.material_index == md.ACCENT for v in f.verts)
+            self.assertGreater(top, 0.8, f"{name}: ore should heap up on top of a roof bin")
+            side.free()
+            roof.free()
+
+
+@unittest.skipIf(bpy is None, "requires Blender (bpy)")
 class KitShipTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -141,6 +184,16 @@ class KitShipTest(unittest.TestCase):
         everything = self.kit.Box("test", Vector((-1e3,) * 3), Vector((1e3,) * 3), {"engine"})
         ship.obstacles.append(everything)
         self.assertIn(("engine", "test"), self.kit.find_conflicts_after(ship))
+
+    def test_command_bridge_on_long_mono_hulls_only(self):
+        def windows(ship):
+            hull = next(o for o in ship.parts if o["shipgen_role"] == "hull")
+            return sum(1 for poly in hull.data.polygons if poly.material_index == 1)
+
+        self.assertGreater(windows(self.kit.build(self.base, plan="mono")), 0)
+        self.assertEqual(windows(self.kit.build(self.base, plan="twin")), 0)
+        small = dict(self.base, hull=dict(self.base["hull"], length=14))
+        self.assertEqual(windows(self.kit.build(small, plan="mono")), 0)
 
     def test_no_engines_is_not_a_fit_issue(self):
         ship = self.kit.build(dict(self.base, engines=dict(self.base["engines"], count=0)))

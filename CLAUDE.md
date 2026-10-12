@@ -49,7 +49,9 @@ Presets are the ship models a player can buy: size tiers × loadouts (`miner_s/m
 combat/generic ones. The seed only
 changes the look within a model. Every preset must generate without warnings
 (`test_presets_generate_cleanly`); a kit model whose loadout doesn't fit any hull for some seeds
-needs fewer/smaller modules (see `hauler_l`). `kit.*` in a preset pins blocks/designs.
+needs fewer/smaller modules (see `hauler_l`). `kit.*` in a preset pins blocks/designs
+(`miner_m_hauler` pins the sponson mid so it doesn't share `miner_m`'s hulls: models with the
+same class, mining and cargo type share the seed streams).
 
 ## Blender versions
 
@@ -72,14 +74,17 @@ needs fewer/smaller modules (see `hauler_l`). `kit.*` in a preset pins blocks/de
 - `shipgen/generator/` – `__init__.py` (`generate`, `Ship`, `clear`), `hull.py` (class profiles
   incl. cargo zone / hold / armor, `HullShape` that other parts attach to), `wings.py`,
   `engines.py`, `mining.py` (nose rigs), `cargo.py` (modules in symmetric lanes),
-  `shapes.py` (low-poly primitives), `materials.py`. Planned: `greebles.py`.
+  `shapes.py` (low-poly primitives), `materials.py` (classic only; greebles are kit-only).
 - `shipgen/stats.py` – gameplay stats from geometry (see above).
 - `shipgen/kit/` – the default builder: `hull_kit.py` (sections with a standard joint, body plans
   mono/twin/fork, class kits), `engine_designs.py` / `rig_designs.py` / `module_designs.py`
-  (10 each, unit size), `greeble_designs.py` (6, look only), `__init__.py` (`build`: sockets, placement, collision check + resolver,
-  triangle budget, role objects, sockets as empties), `collision.py` (convex `-convcolonly`
+  (10 each, unit size), `greeble_designs.py` (6, look only), `__init__.py` (`build` ->
+  `_build_hull` (bodies, add-ons incl. the command bridge, sockets) -> `_place_parts` ->
+  collision check + resolver -> triangle budget -> greebles -> role objects, sockets as empties),
+  `collision.py` (convex `-convcolonly`
   shapes for Godot), `normalize.py` (stat normalisation). Concept: `docs/parts_kit.md`.
-  Every new part design must honour the unit contract in its module docstring; new hull
+  Every new part design must honour the unit contract in its module docstring
+  (`EngineDesignTest`, `ModuleDesignTest` check it); new hull
   blocks must also be added to `params.KIT_*` (test checks it).
 - `shipgen/metrics.py` – top-view silhouette metrics (numpy rasteriser).
 - `shipgen/export.py` – `.glb`, `.blend`, Cycles previews (`three_quarter` and orthographic `top`).

@@ -73,6 +73,8 @@ damit später Teile tauschen (Triebwerk nachrüsten), ohne neu zu generieren.
   an den Kästen. Reihenfolge: erst Seitensockel, dann **Dachsockel** (Mono: zwei gespiegelte
   Reihen auf dem Dach, wenn es breit genug ist; Twin: eine Reihe pro Rumpf). Auf dem Dach
   zeigt das „oben“ des Moduls nach außen, damit gespiegelte Sockel gespiegelte Module tragen.
+  Ausnahme: offene Erzbehälter (`UPRIGHT`: Hopper, Skip, mit sichtbarem Erzhaufen) werden auf
+  dem Dach als Ganzes aufgerichtet – Öffnung nach oben, starr verschoben, also gleiches Volumen.
 
 ## 4. Kollisionen
 
@@ -95,11 +97,15 @@ Hinweis für Godot: `-convcolonly`-Nodes werden beim Import zu StaticBody3D mit
 CollisionShape3D; für ein bewegtes Schiff die CollisionShape3D-Kinder unter den eigenen
 RigidBody3D/CharacterBody3D hängen (oder im Import-Skript umhängen).
 
-## 4b. Flügel und Greebles
+## 4b. Flügel, Brücke und Greebles
 
 - **Flügel** kommen aus `generator/wings.add_wings` (gleiche Geometrie wie im classic-Generator)
   und docken an `wing`-/`fin`-Sockeln an; Kollisionen mit Modulen, Kästen, Zinken oder
   Triebwerken zählen als Passproblem → anderer Rumpf.
+- **Brücke**: Frachter und Miner ab 20 m (Mono/Gabel) bekommen auf dem Heckdach ein
+  Deckshaus mit erhöhter Brücke und leuchtendem Fensterband (wie ein Frachtschiff). Es gehört
+  zum Rumpf, ist reine Optik (Rumpfwerte kommen vom Referenzrumpf) und endet vor der Mitte,
+  wo die Dachmodule sitzen.
 - **Greebles** (`kit/greeble_designs.py`, 6 Designs: Lüftung, Antenne, Schüssel, Platte,
   Leitungen, Licht): freie Dach-/Seitenplätze, gespiegelt, `greeble_density` steuert die Menge,
   der Seed wählt 3 Designs als Stil des Schiffs. Sie werden nur platziert, wo sie nichts

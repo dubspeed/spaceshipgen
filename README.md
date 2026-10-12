@@ -81,7 +81,7 @@ Exit-Code ist bei Fehlern ungleich 0.
 
 | Linie | Modelle |
 |---|---|
-| Bergbau | `miner_s`, `miner_m`, `miner_m_hauler` (mehr Erz, weniger Abbau), `miner_l`, `miner_gas` (Gas-/Eisschaufel, Tanks) |
+| Bergbau | `miner_s`, `miner_m`, `miner_m_hauler` (länger, Seitenkästen, mehr Erz, weniger Abbau), `miner_l`, `miner_gas` (Gas-/Eisschaufel, Tanks) |
 | Fracht & Transport | `hauler_s`, `hauler_m`, `hauler_m_fast` (schneller, weniger Fracht), `hauler_l`, `tanker_m`, `liner_m` (Passagiere) |
 | Kampf & Sonstiges | `fighter`, `interceptor`, `corvette`, `shuttle`, `freighter` |
 

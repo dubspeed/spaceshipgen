@@ -4,6 +4,8 @@ Local frame at the socket: ``n`` = socket normal (out of the hull), ``t`` = alon
 the ship (+Y), ``u`` = up (+Z). Contract (the module's build space):
 n in [-EMBED, DEPTH], t in [-HALF_LENGTH, HALF_LENGTH], u in [-HALF_HEIGHT, HALF_HEIGHT],
 times the socket radius; closed pieces; mirrored sockets give mirrored modules.
+On roof sockets ``u`` points outboard, except for ``UPRIGHT`` designs (open bins), whose
+side-socket build space is turned upright onto the roof instead.
 Materials: 0 accent, 1 glow, 2 cargo.
 """
 
@@ -18,11 +20,17 @@ EMBED, DEPTH, HALF_LENGTH, HALF_HEIGHT = 0.1, 0.9, 1.0, 0.5
 
 
 class Frame:
-    def __init__(self, pos, normal, m):
+    def __init__(self, pos, normal, m, upright=False):
         self.o, self.n, self.m = Vector(pos), Vector(normal).normalized(), m
         self.t = Vector((0, 1, 0))
-        if abs(self.n.z) > 0.9:  # roof socket: "up" of the module points outboard, so mirrored
-            self.u = Vector((1.0 if self.o.x >= 0 else -1.0, 0, 0))  # sockets give mirrored modules
+        if abs(self.n.z) > 0.9:  # roof socket
+            outboard = Vector((1.0 if self.o.x >= 0 else -1.0, 0, 0))
+            if upright:  # open-topped designs stay upright: the side-socket build space, turned so
+                # its n points outboard and its u up, shifted onto the roof (a rigid move: same volume)
+                self.o = self.o + (-outboard * (0.5 * DEPTH - 0.5 * EMBED) + self.n * (HALF_HEIGHT - EMBED)) * m
+                self.n, self.u = outboard, Vector((0, 0, 1))
+            else:  # "up" of the module points outboard, so mirrored sockets give mirrored modules
+                self.u = outboard
         else:
             self.u = Vector((0, 0, 1))
 
@@ -63,14 +71,40 @@ def double_container(bm, f):
     _box(bm, f, -EMBED, 0.3, -0.1, 0.1, -0.2, 0.2, material=ACCENT)  # coupling
 
 
+# ore heaped over the rim of open bins: (n, t, size) of faceted lumps
+ORE_PILE = ((0.35, -0.45, 0.3), (0.25, 0.2, 0.3), (0.5, 0.55, 0.24), (0.52, -0.05, 0.22))
+
+
+def _rock(bm, f, n, t, u, size, material=ACCENT):
+    """Faceted ore lump: an irregular octahedron (closed, 8 triangles), flattened in u."""
+    shape = ((0.9, 0, 0), (-1.0, 0.1, 0), (0, 1.1, 0.05), (0.1, -0.85, 0), (0, 0, 0.6), (0.05, -0.1, -0.5))
+    v = [bm.verts.new(f.p(n + size * a, t + size * b, u + size * c)) for a, b, c in shape]
+    for i, j, k in ((0, 2, 4), (2, 1, 4), (1, 3, 4), (3, 0, 4), (2, 0, 5), (1, 2, 5), (3, 1, 5), (0, 3, 5)):
+        bm.faces.new((v[i], v[j], v[k])).material_index = material
+
+
+def _ore(bm, f, rim_u):
+    for n, t, size in ORE_PILE:
+        _rock(bm, f, n, t, rim_u + 0.1 - 0.2 * size, size)
+
+
 def ore_hopper(bm, f):
-    _box(bm, f, -EMBED, 0.9, -0.9, 0.9, -0.5, 0.45, taper=0.45)
-    _box(bm, f, -EMBED, 0.92, -0.92, 0.92, 0.42, 0.5, material=ACCENT)  # rim
+    """V-shaped funnel bin, open at the top, with ore heaped over the rim."""
+    _box(bm, f, -EMBED, 0.88, -0.9, 0.9, -0.5, 0.25, taper=0.45)
+    _box(bm, f, -EMBED, 0.9, -0.92, 0.92, 0.2, 0.28, material=ACCENT)  # rim
+    for t in (-0.88, 0.88):  # end frames
+        _box(bm, f, -EMBED, 0.9, t - 0.06, t + 0.06, -0.3, 0.28, material=ACCENT)
+    _ore(bm, f, rim_u=0.28)
 
 
 def ore_skip(bm, f):
-    _box(bm, f, -EMBED, 0.88, -0.98, 0.98, -0.45, 0.45)
-    _box(bm, f, 0.2, 0.9, -0.7, 0.7, 0.45, 0.5, material=ACCENT)  # hatch
+    """Mining skip: a tub with sloped ends, strapped, carrying ore."""
+    n0, n1, u0, u1 = -EMBED, 0.84, -0.45, 0.22
+    _hexa(bm, f, [(n0, -0.65, u0), (n1, -0.65, u0), (n1, 0.65, u0), (n0, 0.65, u0),
+                  (n0, -0.98, u1), (n1, -0.98, u1), (n1, 0.98, u1), (n0, 0.98, u1)], CARGO)
+    for t in (-0.35, 0.35):  # straps
+        _box(bm, f, -EMBED, 0.9, t - 0.07, t + 0.07, u0 - 0.03, u1 + 0.04, material=ACCENT)
+    _ore(bm, f, rim_u=u1)
 
 
 def _cyl(bm, f, n, u, radius, t0, t1, sides=8, cones=True, material=CARGO):
@@ -123,5 +157,9 @@ def designs_of(kind: str) -> list[int]:
     return [i for i, name in enumerate(NAMES) if KIND[name] == kind]
 
 
+UPRIGHT = {"ore_hopper", "ore_skip"}  # open bins: kept open side up on roof sockets too
+
+
 def build(bm, design: int, pos, normal, radius: float) -> None:
-    DESIGNS[design % len(DESIGNS)](bm, Frame(pos, normal, radius))
+    fn = DESIGNS[design % len(DESIGNS)]
+    fn(bm, Frame(pos, normal, radius, upright=fn.__name__ in UPRIGHT))
