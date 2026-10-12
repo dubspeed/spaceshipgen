@@ -121,6 +121,34 @@ class KitShipTest(unittest.TestCase):
                 self.assertEqual(ship.loadout["rig"] == "none", pointed, ship.warnings)
                 self.check_ship(ship)
 
+    def test_wings_on_every_mono_hull(self):
+        """X-wings + fin + side modules on every mono hull: closed, symmetric, nothing left colliding."""
+        from shipgen.kit import hull_kit as hk
+
+        fighter = dict(params.load(os.path.join(ROOT, "presets", "fighter.json")).params, spread=0)
+        for wing_type, count in (("delta", 3), ("swept", 4), ("straight", 2), ("forward_swept", 5)):
+            for tail, mid, nose in itertools.product(hk.TAILS, hk.MIDS, hk.NOSES):
+                p = dict(fighter, wings=dict(fighter["wings"], type=wing_type, count=count),
+                         cargo={"type": "containers", "modules": 4, "size": 0.5})
+                with self.subTest(wings=f"{wing_type}x{count}", design=f"mono/{tail}/{mid}/{nose}"):
+                    ship = self.kit.build(p, plan="mono", tail=tail, mid=mid, nose=nose)
+                    self.assertEqual(self.kit.find_conflicts_after(ship), [])
+                    self.check_ship(ship)
+
+    def test_combat_silhouettes_stay_distinct(self):
+        """Top view: winged fighters/interceptors stay darts, freighters stay bricks."""
+        from shipgen import generator
+
+        def fill(preset, seed):
+            p = dict(params.load(os.path.join(ROOT, "presets", f"{preset}.json")).params, seed=seed)
+            return generator.generate(p).stats()["top_view"]["fill"]
+
+        for seed in range(1, 5):
+            with self.subTest(seed=seed):
+                self.assertLess(fill("fighter", seed), 0.6)
+                self.assertLess(fill("interceptor", seed), 0.55)
+                self.assertGreater(fill("hauler_m", seed), fill("fighter", seed) + 0.1)
+
     def test_part_designs_vary_with_the_seed(self):
         loadouts = {tuple(self.kit.build(dict(self.base, seed=s)).loadout.values()) for s in range(1, 13)}
         self.assertGreaterEqual(len(loadouts), 5, loadouts)

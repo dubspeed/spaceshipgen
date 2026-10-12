@@ -54,10 +54,22 @@ def _loft(bm, root, tip) -> None:
     bm.faces.new(tip)
 
 
-def build_wings_mesh(params: dict, hull: HullShape, name: str = "Ship_Wings"):
+@dataclass
+class WingPiece:
+    """One mirrored wing pair (or the tail fin) as built: for collision checks and sockets."""
+
+    kind: str  # "pair" or "fin"
+    verts: list
+    root: tuple  # (x, y, z) of the right root mid chord (fin: x = 0)
+    normal: tuple  # outward direction at the root
+
+
+def add_wings(bm, params: dict, hull) -> list[WingPiece]:
+    """Add the wings to ``bm``. ``hull`` needs ``length``, ``y(t)`` and ``section(t)`` (with
+    half_width / top / bottom / z_center) - a HullShape or the kit's adapter."""
     wp = params["wings"]
     if wp["type"] == "none" or wp["count"] == 0:
-        return None
+        return []
     rng = random.Random(f"{params['seed']}:wings")
     wt = WING_TYPES[wp["type"]]
     length = hull.length
@@ -75,16 +87,17 @@ def build_wings_mesh(params: dict, hull: HullShape, name: str = "Ship_Wings"):
     if wp["type"] == "delta":  # keep the trailing edge straight or swept back
         tip_le = min(tip_le, root_le - (root_chord - tip_chord))
 
-    bm = bmesh.new()
+    pieces = []
     pairs, fin = divmod(wp["count"], 2)
     if semi > 0.05 * length:
         if pairs == 1:
             dihedrals = [rng.uniform(-4.0, 8.0)]
         else:
             dihedrals = [-22.0 + 44.0 * i / (pairs - 1) for i in range(pairs)]
-        for i, dihedral in enumerate(dihedrals):
+        for dihedral in dihedrals:
             d = math.radians(dihedral)
             z_root = sec.z_center - 0.15 * sec.bottom + math.copysign(0.35, dihedral) * sec.top * (pairs > 1)
+            before = set(bm.verts)
             for side in (1.0, -1.0):
                 root = _airfoil(bm, root_le, root_chord, side * root_x, z_root, THICKNESS * root_chord, False)
                 tip = _airfoil(
@@ -92,6 +105,8 @@ def build_wings_mesh(params: dict, hull: HullShape, name: str = "Ship_Wings"):
                     z_root + semi * math.sin(d), THICKNESS * tip_chord, False,
                 )
                 _loft(bm, root, tip)
+            pieces.append(WingPiece("pair", [v for v in bm.verts if v not in before],
+                                    (sec.half_width, root_le - 0.5 * root_chord, z_root), (1.0, 0.0, 0.0)))
     if fin:
         tail_t = 0.12
         tail = hull.section(tail_t)
@@ -99,13 +114,21 @@ def build_wings_mesh(params: dict, hull: HullShape, name: str = "Ship_Wings"):
         fin_le = hull.y(tail_t) + 0.6 * fin_chord
         fin_height = max(0.35 * wp["span"] * 0.5, 0.15 * length)
         z0 = tail.z_center + tail.top * 0.7
+        before = set(bm.verts)
         root = _airfoil(bm, fin_le, fin_chord, 0.0, z0, THICKNESS * fin_chord, True)
         tip = _airfoil(
             bm, fin_le - math.tan(math.radians(40)) * fin_height, fin_chord * 0.4, 0.0,
             z0 + fin_height, THICKNESS * fin_chord * 0.4, True,
         )
         _loft(bm, root, tip)
+        pieces.append(WingPiece("fin", [v for v in bm.verts if v not in before],
+                                (0.0, fin_le - 0.5 * fin_chord, tail.z_center + tail.top), (0.0, 0.0, 1.0)))
+    return pieces
 
+
+def build_wings_mesh(params: dict, hull: HullShape, name: str = "Ship_Wings"):
+    bm = bmesh.new()
+    add_wings(bm, params, hull)
     if not bm.faces:
         bm.free()
         return None

@@ -34,6 +34,7 @@ class ExportTest(unittest.TestCase):
         bpy.ops.wm.read_factory_settings(use_empty=True)
         cls.tmp = tempfile.TemporaryDirectory()
         cls.params = params.load(os.path.join(ROOT, "presets", "fighter.json")).params
+        cls.params["builder"] = "classic"  # this class covers the classic builder; kit: test_kit
         cls.ship = generator.generate(cls.params)
         cls.tris = cls.ship.stats()["tris"]
         cls.files = export.export_all(
@@ -104,33 +105,65 @@ if __name__ == "__main__":
     unittest.main()
 
 
+def _rotate(q, v):
+    """Rotate vector v by the glTF quaternion q = (x, y, z, w)."""
+    x, y, z, w = q
+    vx, vy, vz = v
+    # t = 2 * cross(q.xyz, v); v' = v + w * t + cross(q.xyz, t)
+    tx, ty, tz = 2 * (y * vz - z * vy), 2 * (z * vx - x * vz), 2 * (x * vy - y * vx)
+    return (vx + w * tx + (y * tz - z * ty), vy + w * ty + (z * tx - x * tz), vz + w * tz + (x * ty - y * tx))
+
+
 @unittest.skipIf(bpy is None, "requires Blender (bpy)")
 class GodotAxesTest(unittest.TestCase):
-    """The .glb must match Godot: +Y up, -Z forward (nose), +X right, no node rotations."""
+    """The .glb must match Godot: +Y up, -Z forward (nose), +X right. Ship parts carry no node
+    rotation; sockets are rotated so that their -Z (Godot's forward) is the socket normal."""
 
-    def test_glb_axes(self):
+    def export(self, preset, builder):
         from shipgen import export, generator
 
-        p = params.load(os.path.join(ROOT, "presets", "interceptor.json")).params  # has a tail fin
+        p = params.load(os.path.join(ROOT, "presets", preset)).params
         p["spread"] = 0  # exact hull length
+        p["builder"] = builder
         ship = generator.generate(p)
         with tempfile.TemporaryDirectory() as tmp:
             path = export.export_glb(ship, os.path.join(tmp, "ship.glb"))
-            gltf = read_glb_json(path)
+            return p, read_glb_json(path)
 
+    @staticmethod
+    def extent(gltf, mesh_name):
+        mesh = next(m for m in gltf["meshes"] if m["name"] == mesh_name)
+        acc = gltf["accessors"][mesh["primitives"][0]["attributes"]["POSITION"]]
+        return acc["min"], acc["max"]
+
+    def check_axes(self, p, gltf, fin_mesh):
         for node in gltf["nodes"]:
-            self.assertNotIn("rotation", node, node["name"])
-
-        def extent(mesh_name):
-            mesh = next(m for m in gltf["meshes"] if m["name"] == mesh_name)
-            acc = gltf["accessors"][mesh["primitives"][0]["attributes"]["POSITION"]]
-            return acc["min"], acc["max"]
-
+            if not node["name"].startswith("Socket_"):
+                self.assertNotIn("rotation", node, node["name"])
         half = p["hull"]["length"] / 2
-        hull_min, hull_max = extent("Ship_Hull")
+        hull_min, hull_max = self.extent(gltf, "Ship_Hull")
         self.assertAlmostEqual(hull_min[2], -half, places=3)  # nose at -Z
         self.assertAlmostEqual(hull_max[2], half, places=3)
-        engines_min, _ = extent("Ship_Engines")
+        engines_min, _ = self.extent(gltf, "Ship_Engines")
         self.assertGreater(engines_min[2], 0)  # engines at the back (+Z)
-        _, wings_max = extent("Ship_Wings")
+        _, wings_max = self.extent(gltf, fin_mesh)
         self.assertGreater(wings_max[1], hull_max[1])  # tail fin points up (+Y)
+
+    def test_classic_axes(self):
+        p, gltf = self.export("interceptor.json", "classic")  # has a tail fin
+        self.check_axes(p, gltf, "Ship_Wings")
+
+    def test_kit_axes_and_sockets(self):
+        p, gltf = self.export("interceptor.json", "kit")
+        self.check_axes(p, gltf, "Ship_Wings")
+        expected = {"engine": (0, 0, 1), "nose": (0, 0, -1), "top": (0, 1, 0), "fin": (0, 1, 0)}  # glTF directions
+        sockets = [n for n in gltf["nodes"] if n["name"].startswith("Socket_")]
+        self.assertTrue(sockets)
+        for node in sockets:
+            kind = node["extras"]["shipgen_socket"]["kind"]
+            forward = _rotate(node.get("rotation", (0, 0, 0, 1)), (0, 0, -1))  # Godot forward
+            if kind in expected:
+                for got, want in zip(forward, expected[kind]):
+                    self.assertAlmostEqual(got, want, places=4, msg=f"{node['name']} faces {forward}")
+            if kind == "wing":
+                self.assertAlmostEqual(abs(forward[0]), 1.0, places=4, msg=node["name"])

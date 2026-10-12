@@ -18,7 +18,7 @@ from mathutils import Vector
 
 from .. import params as params_mod
 from .. import stats
-from ..generator import Ship, clear, materials, shapes
+from ..generator import Ship, clear, materials, shapes, wings
 from ..generator.hull import CLASS_PROFILES, Station
 from . import collision, engine_designs, module_designs, normalize, rig_designs
 from .hull_kit import Design, HullLayout, Socket, layout_body, loft_body, section_at, RIDGE
@@ -297,7 +297,7 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
                 col_extras.append(_grab(hull_bm, lambda x=x: _mini_body(
                     hull_bm, x, pod_a, pod_b, pw, pod_top, pod_bottom, chamfer, ridge, length, pointed=False)))
                 obstacles.append(Box("pod", Vector((x - pw, pod_a, -pod_bottom)), Vector((x + pw, pod_b, pod_top)),
-                                     {"rig", "module", "engine"}))
+                                     {"rig", "module", "engine", "wing"}))
             # modules mount on the pods' outer faces instead of the hull side
             x_out = section_at(lay, 0.5 * (y_a + y_b), length).half_width + 1.5 * pw
             span_a, span_b = pod_a + 0.2 * (pod_b - pod_a), pod_b - 0.3 * (pod_b - pod_a)
@@ -319,14 +319,14 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
                 col_extras.append(_grab(hull_bm, lambda x=x, y0=y0, y1=y1: _mini_body(
                     hull_bm, x, y0, y1, pw, front.top * 0.8, front.bottom * 0.8, chamfer, ridge, length)))
                 obstacles.append(Box("prong", Vector((x - pw, y0, -front.bottom)), Vector((x + pw, y1, front.top)),
-                                     {"rig", "module"}))
+                                     {"rig", "module", "wing"}))
             inner = front.half_width - 1.6 * pw  # inner face of the prongs
             sockets.append(Socket("nose", Vector((0, lay.y_front, 0)), Vector((0, 1, 0)), 0.9 * inner))
         elif not lay.point_nose:
             sockets.append(Socket("nose", Vector((0, lay.y_front, 0)), Vector((0, 1, 0)), 0.95 * front.half_width))
 
     for i, sk in enumerate(sockets):
-        sk.name = f"Socket_{sk.kind}_{i}"
+        sk.name = sk.name or f"Socket_{sk.kind}_{i}"
 
     # ---- parts on sockets, each tracked as an instance for the collision check
     instances: list[Instance] = []
@@ -341,6 +341,19 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
     for sk in (s for s in sockets if s.kind == "engine"):
         place("engine", sk.name, lambda sk=sk: engine_designs.build(parts_bm, engine_design, sk.pos, sk.normal,
                                                                     sk.radius), sk)
+
+    wing_layout = bodies[0] if design.plan == "twin" else lay
+    for i, piece in enumerate(wings.add_wings(parts_bm, p, _WingHull(length, wing_layout))):
+        x, y, z = piece.root
+        sides = (1, -1) if piece.kind == "pair" else (0,)
+        for side in sides:
+            normal = Vector(piece.normal) * (side or 1)
+            kind = "wing" if piece.kind == "pair" else "fin"
+            sk = Socket(kind, Vector((side * x, y, z)), normal, 0.5 * length,
+                        f"Socket_{kind}_{i}" + ("" if side == 0 else ("_r" if side > 0 else "_l")))
+            verts = [v for v in piece.verts if side == 0 or (v.co.x > 0) == (side > 0)]
+            instances.append(Instance("wing", f"wings_{i}", sk.name, verts, sk))
+            sockets.append(sk)
 
     mining_kind = p["mining"]["type"]
     nose_sockets = [s for s in sockets if s.kind == "nose"]
@@ -401,7 +414,7 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
     col_pieces += col_extras
     col_pieces += [[v.co.copy() for v in i.verts] for i in instances if i.verts and i.verts[0].is_valid]
 
-    role_of = {"engine": "engines", "rig": "mining", "module": "cargo"}
+    role_of = {"engine": "engines", "rig": "mining", "module": "cargo", "wing": "wings"}
     parts_bm.verts.index_update()
     role_verts: dict[str, set] = {"engines": {v.index for v in pylon_verts if v.is_valid}}
     for inst in instances:
@@ -457,6 +470,7 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
         "engine": fitted("engine", engine_designs.NAMES, engine_design),
         "rig": fitted("rig", rig_designs.NAMES, rig_design),
         "module": fitted("module", module_designs.NAMES, module_design),
+        "wings": p["wings"]["type"] if any(i.kind == "wing" and i.verts for i in instances) else "none",
     }
     ship = KitShip(root=root, parts=parts, params=p, warnings=warnings, design=design, sockets=sockets,
                    socket_objects=socket_objects, colliders=colliders, engine_design=engine_design, loadout=loadout,
@@ -511,6 +525,21 @@ def _normalized_stats(ship, hull, engine_design, rig_design, module_design, refe
 
 
 @dataclass
+class _WingHull:
+    """Kit layout in the shape wings.add_wings expects (outer edge of the outermost body)."""
+
+    length: float
+    layout: HullLayout
+
+    def y(self, t: float) -> float:
+        return (t - 0.5) * self.length
+
+    def section(self, t: float) -> Station:
+        st = section_at(self.layout, self.y(t), self.length)
+        return Station(t, abs(self.layout.x_offset) + st.half_width, st.top, st.bottom, 0.0, 0.0)
+
+
+@dataclass
 class _StatsHull:
     """What stats.compute needs to know about the hull; mining reach counts from the nose mount."""
 
@@ -560,7 +589,7 @@ class Instance:
         return Box(self.kind, lo, hi)
 
 
-PRIORITY = {"module": 0, "rig": 1, "engine": 2}  # lowest is dropped first
+PRIORITY = {"module": 0, "wing": 1, "rig": 2, "engine": 3}  # lowest is dropped first
 
 
 def find_conflicts_after(ship: "KitShip") -> list:

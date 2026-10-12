@@ -3,9 +3,9 @@
 Procedural low-poly spaceship generator for Blender, producing ships for a Godot game about
 asteroid mining, freight and transport (combat exists but is secondary). Core idea: `generator.generate(params) -> Ship`
 is a pure function of a validated parameter dict, independent of any UI. Two builders
-(`params["builder"]`): **`kit`** (default; hulls from designed sections, parts on sockets, see
-`docs/parts_kit.md`) and **`classic`** (old single-loft generator; still used by the combat
-presets because only it has wings). Three front-ends use it:
+(`params["builder"]`): **`kit`** (default for every preset; hulls from designed sections, parts
+on sockets, see `docs/parts_kit.md`) and **`classic`** (old single-loft generator, kept for
+comparison; `generator/wings.py` serves both). Three front-ends use it:
 the extension panel (`shipgen/ui.py`), the headless CLI (`cli.py`) and, later, the AI prompt
 (`shipgen/ai_prompt.py`, which will only produce parameter JSON).
 
@@ -46,7 +46,7 @@ sizing. The classic builder has its own `MINING_EFFICIENCY` (`test_mining_rigs`)
 
 Presets are the ship models a player can buy: size tiers × loadouts (`miner_s/m/l`,
 `miner_m_hauler`, `miner_gas`, `hauler_s/m/l`, `hauler_m_fast`, `tanker_m`, `liner_m`) plus
-combat/generic ones (`fighter`, `interceptor`, `corvette` use `builder: classic`). The seed only
+combat/generic ones. The seed only
 changes the look within a model. Every preset must generate without warnings
 (`test_presets_generate_cleanly`); a kit model whose loadout doesn't fit any hull for some seeds
 needs fewer/smaller modules (see `hauler_l`). `kit.*` in a preset pins blocks/designs.
