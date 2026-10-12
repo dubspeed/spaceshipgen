@@ -112,6 +112,7 @@ class GodotAxesTest(unittest.TestCase):
         from shipgen import export, generator
 
         p = params.load(os.path.join(ROOT, "presets", "interceptor.json")).params  # has a tail fin
+        p["spread"] = 0  # exact hull length
         ship = generator.generate(p)
         with tempfile.TemporaryDirectory() as tmp:
             path = export.export_glb(ship, os.path.join(tmp, "ship.glb"))

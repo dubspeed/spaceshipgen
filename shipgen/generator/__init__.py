@@ -21,7 +21,7 @@ COLLECTION_NAME = "ShipGen"
 class Ship:
     root: bpy.types.Object
     parts: list[bpy.types.Object]
-    params: dict
+    params: dict  # what was built: the model params after the seed's spread
     warnings: list[str] = field(default_factory=list)
     gameplay: dict = field(default_factory=dict)  # see shipgen.stats
 
@@ -92,7 +92,7 @@ def generate(raw_params: dict, collection_name: str = COLLECTION_NAME) -> Ship:
     Any previous ship in that collection is replaced.
     """
     result = params_mod.validate(raw_params)
-    p = result.params
+    p = params_mod.individualize(result.params)
 
     clear(collection_name)
     coll = bpy.data.collections.new(collection_name)

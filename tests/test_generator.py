@@ -74,8 +74,9 @@ class GeneratorTest(unittest.TestCase):
 
                 # hull spans exactly the hull length; the whole ship stays plausible
                 hull = ship.parts[0]
-                length = p["hull"]["length"]
+                length = ship.params["hull"]["length"]  # after the seed's spread
                 self.assertAlmostEqual(hull.dimensions.y, length, delta=length * 0.001)
+                self.assertAlmostEqual(length, p["hull"]["length"], delta=p["hull"]["length"] * p["spread"] + 1e-6)
                 dx, dy, dz = stats["dimensions"]
                 self.assertGreater(dx, 0.02 * length)
                 self.assertLess(dx, 3.0 * length)
@@ -115,7 +116,7 @@ class GeneratorTest(unittest.TestCase):
         self.assertEqual(sorted(m.name for m in bpy.data.meshes), names[1:])
 
     def test_accepts_raw_params(self):
-        ship = self.generator.generate({"hull": {"length": 1e6}, "class": "nope"})
+        ship = self.generator.generate({"hull": {"length": 1e6}, "class": "nope", "spread": 0})
         self.assertEqual(ship.params["hull"]["length"], 200.0)
         self.assertEqual(len(ship.warnings), 2)
 
@@ -138,8 +139,32 @@ class GeneratorTest(unittest.TestCase):
             self.assertLess(max(fill["interceptor"]), 0.45)
             self.assertGreater(min(fill["freighter"]), 0.7)
 
-    def test_mining_rigs(self):
+    def test_spread_gives_individual_ships_with_similar_stats(self):
+        """Seeds of one model differ slightly (manufacturing spread), never wildly."""
         base = silhouette_params("miner_m", 1)
+        model = self.generator.generate(dict(base, spread=0)).gameplay
+        keys = ("mass_t", "acceleration_ms2", "hull_hp")
+        samples = [self.generator.generate(dict(base, seed=s)).gameplay for s in range(1, 9)]
+        for key in keys:
+            values = [g[key] for g in samples]
+            with self.subTest(key=key, values=values):
+                self.assertGreater(len(set(values)), 4)  # seeds really differ
+                for v in values:
+                    self.assertLess(abs(v / model[key] - 1), 0.35)
+        ore = [g["cargo"]["ore_m3"] for g in samples]
+        power = [g["mining"]["power"] for g in samples]
+        self.assertLess(max(ore) / min(ore), 1.6, ore)
+        self.assertLess(max(power) / min(power), 1.6, power)
+
+    def test_zero_spread_builds_the_exact_model(self):
+        base = dict(silhouette_params("miner_m", 1), spread=0)
+        a = self.generator.generate(dict(base, seed=1))
+        b = self.generator.generate(dict(base, seed=2))
+        self.assertEqual(a.params["hull"], b.params["hull"])
+        self.assertEqual(a.gameplay["mining"], b.gameplay["mining"])
+
+    def test_mining_rigs(self):
+        base = dict(silhouette_params("miner_m", 1), spread=0)  # calibration is for the exact model
         for kind in ("drill", "laser", "claw", "scoop"):
             p = dict(base, mining=dict(base["mining"], type=kind, count=2, size=0.5))
             with self.subTest(kind=kind):

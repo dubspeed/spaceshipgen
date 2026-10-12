@@ -16,7 +16,12 @@ import bpy
 from . import shapes
 from .hull import HullShape
 
-LANES = (("side", 1), ("top", 1), ("side", 2), ("top", 2))
+# Lane fill orders and column orders the seed picks from (look only: same modules, same volume).
+LANE_ORDERS = (
+    (("side", 1), ("top", 1), ("side", 2), ("top", 2)),
+    (("top", 1), ("side", 1), ("top", 2), ("side", 2)),
+)
+COLUMN_ORDERS = ("centre", "front", "back")
 EMBED = 0.1  # fraction of a module sunk into the hull / neighbour (no visible gaps)
 
 
@@ -53,7 +58,11 @@ def slots(params: dict, hull: HullShape) -> list[tuple[float, float, float]]:
     length = min(length, zone)
     pitch = zone / columns
     ys = [hull.y(t0) + pitch * (i + 0.5) for i in range(columns)]
-    ys.sort(key=lambda y: abs(y - hull.y(0.5 * (t0 + t1))))  # centre columns first
+    rng = random.Random(f"{params['seed']}:cargo_layout")
+    lanes = rng.choice(LANE_ORDERS)
+    order = rng.choice(COLUMN_ORDERS)
+    centre = hull.y(0.5 * (t0 + t1))
+    ys.sort(key={"centre": lambda y: abs(y - centre), "front": lambda y: -y, "back": lambda y: y}[order])
 
     def section_at(y):
         ts = [(yy / hull.length) + 0.5 for yy in (y - 0.5 * length, y, y + 0.5 * length)]
@@ -62,7 +71,7 @@ def slots(params: dict, hull: HullShape) -> list[tuple[float, float, float]]:
 
     remaining = cp["modules"]
     out = []
-    for kind, tier in LANES:
+    for kind, tier in lanes:
         for y in ys:
             hw, top, zc = section_at(y)
             if kind == "side" and remaining >= 2:

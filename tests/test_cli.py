@@ -76,7 +76,7 @@ class CliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as out:
             proc, results = self.run_cli(
                 "--preset", "fighter", "--seeds", "1-3", "--no-render", "--no-blend",
-                "--set", "hull.length=30", "--set", "max_tris=2000", "--out", out,
+                "--set", "hull.length=30", "--set", "max_tris=2000", "--set", "spread=0", "--out", out,
             )
             self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
             self.assertEqual([r["seed"] for r in results], [1, 2, 3])

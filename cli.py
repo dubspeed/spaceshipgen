@@ -133,7 +133,8 @@ def run(args: argparse.Namespace) -> list[dict]:
             result = {"name": name, "seed": seed, "files": files, "stats": ship.stats(), "warnings": ship.warnings}
             os.makedirs(args.out, exist_ok=True)
             with open(os.path.join(args.out, name + ".json"), "w", encoding="utf-8") as f:
-                json.dump({"params": ship.params, "stats": result["stats"]}, f, indent=2)
+                json.dump({"model": base_name, "model_params": checked.params, "params": ship.params,
+                           "stats": result["stats"]}, f, indent=2)
             print("SHIPGEN_RESULT " + json.dumps(result), flush=True)
             results.append(result)
     return results

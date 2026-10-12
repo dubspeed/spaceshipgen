@@ -83,6 +83,34 @@ class RepairTest(unittest.TestCase):
         self.assertEqual(twice.warnings, [])
 
 
+class IndividualizeTest(unittest.TestCase):
+    def setUp(self):
+        self.model = params.load(os.path.join(ROOT, "presets", "miner_m.json")).params
+
+    def test_deterministic_per_seed(self):
+        a = params.individualize(dict(self.model, seed=5))
+        b = params.individualize(dict(self.model, seed=5))
+        c = params.individualize(dict(self.model, seed=6))
+        self.assertEqual(a, b)
+        self.assertNotEqual(a["hull"], c["hull"])
+
+    def test_stays_within_spread_and_schema(self):
+        spread = self.model["spread"]
+        for seed in range(50):
+            ind = params.individualize(dict(self.model, seed=seed))
+            self.assertEqual(params.validate(ind).warnings, [])
+            for key in ("length", "width_ratio", "height_ratio"):
+                ratio = ind["hull"][key] / self.model["hull"][key]
+                self.assertLessEqual(abs(ratio - 1), spread + 1e-9, (seed, key))
+            # discrete choices are never touched
+            for path in (("class",), ("mining", "type"), ("cargo", "modules"), ("engines", "count")):
+                self.assertEqual(params.get_path(ind, path), params.get_path(self.model, path))
+
+    def test_zero_spread_is_identity(self):
+        model = dict(self.model, spread=0.0)
+        self.assertEqual(params.individualize(model), model)
+
+
 class SchemaTest(unittest.TestCase):
     def test_json_schema_mirrors_schema(self):
         js = params.json_schema()

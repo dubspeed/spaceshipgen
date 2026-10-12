@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import copy
 import json
+import random
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -78,6 +79,8 @@ SCHEMA: dict[str, Any] = {
         "palette": Field(str, "military_grey", choices=PALETTES),
         "wear": Field(float, 0.3, 0.0, 1.0),
     },
+    "spread": Field(float, 0.04, 0.0, 0.25,
+                    description="Per-seed manufacturing spread (±) of proportions and part sizes; 0 = exact model"),
     "max_tris": Field(int, 15000, 500, 500000, description="Triangle budget for the whole ship"),
 }
 
@@ -181,6 +184,41 @@ def validate(data: Any) -> ValidationResult:
     warnings: list[str] = []
     params = _validate(data, SCHEMA, "", warnings)
     return ValidationResult(params, warnings)
+
+
+# (path, kind): "scale" multiplies by 1 ± spread, "shift" adds ± spread * amount.
+# Proportions and part sizes change the stats slightly; the shape knobs mostly the look.
+_SPREAD = (
+    (("hull", "length"), "scale", 1.0),
+    (("hull", "width_ratio"), "scale", 1.0),
+    (("hull", "height_ratio"), "scale", 1.0),
+    (("hull", "taper"), "shift", 1.5),
+    (("hull", "nose_sharpness"), "shift", 1.5),
+    (("hull", "squareness"), "shift", 2.0),
+    (("wings", "span"), "scale", 1.0),
+    (("wings", "sweep_deg"), "shift", 60.0),
+    (("engines", "size"), "scale", 1.0),
+    (("mining", "size"), "shift", 1.0),
+    (("cargo", "size"), "shift", 1.0),
+)
+
+
+def individualize(params: dict) -> dict:
+    """The concrete ship of a model: apply the seed's manufacturing spread.
+
+    Deterministic per seed, independent of the shape random streams. Expects
+    validated params; returns validated params (values stay within the schema).
+    """
+    spread = params["spread"]
+    if spread <= 0:
+        return copy.deepcopy(params)
+    rng = random.Random(f"{params['seed']}:individual")
+    out = copy.deepcopy(params)
+    for path, kind, amount in _SPREAD:
+        u = rng.uniform(-1.0, 1.0)  # always drawn, so the sequence doesn't depend on values
+        value = get_path(out, path)
+        set_path(out, path, value * (1.0 + u * spread) if kind == "scale" else value + u * spread * amount)
+    return validate(out).params
 
 
 def load(path: str) -> ValidationResult:
