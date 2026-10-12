@@ -76,7 +76,7 @@ needs fewer/smaller modules (see `hauler_l`). `kit.*` in a preset pins blocks/de
 - `shipgen/stats.py` – gameplay stats from geometry (see above).
 - `shipgen/kit/` – the default builder: `hull_kit.py` (sections with a standard joint, body plans
   mono/twin/fork, class kits), `engine_designs.py` / `rig_designs.py` / `module_designs.py`
-  (10 each, unit size), `__init__.py` (`build`: sockets, placement, collision check + resolver,
+  (10 each, unit size), `greeble_designs.py` (6, look only), `__init__.py` (`build`: sockets, placement, collision check + resolver,
   triangle budget, role objects, sockets as empties), `collision.py` (convex `-convcolonly`
   shapes for Godot), `normalize.py` (stat normalisation). Concept: `docs/parts_kit.md`.
   Every new part design must honour the unit contract in its module docstring; new hull

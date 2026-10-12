@@ -135,6 +135,22 @@ class KitShipTest(unittest.TestCase):
                     self.assertEqual(self.kit.find_conflicts_after(ship), [])
                     self.check_ship(ship)
 
+    def test_greebles(self):
+        """Greebles: density controls them, they never touch other parts and add no mass."""
+        counts = []
+        for density in (0.0, 0.4, 1.0):
+            p = dict(self.base, greeble_density=density)
+            ship = self.kit.build(p, plan="mono", tail="flat", mid="straight", nose="blunt")
+            greebles = [i for i in ship.instances if i.kind == "greeble" and i.verts]
+            counts.append(len(greebles))
+            self.assertEqual(self.kit.find_conflicts_after(ship), [])
+            self.check_ship(ship)
+            if density == 0.0:
+                bare = ship.gameplay
+        self.assertEqual(counts[0], 0)
+        self.assertLess(counts[1], counts[2])
+        self.assertEqual(ship.gameplay["mass_t"], bare["mass_t"])  # look only
+
     def test_combat_silhouettes_stay_distinct(self):
         """Top view: winged fighters/interceptors stay darts, freighters stay bricks."""
         from shipgen import generator
@@ -307,6 +323,8 @@ class GodotColliderTest(unittest.TestCase):
                 self.assertTrue(all(n.dot(v.co - o) <= eps for n, o in planes), f"{col.name} is not convex")
             hulls.append(planes)
         for part in ship.parts:
+            if part["shipgen_role"] == "greebles":  # decoration: deliberately without colliders
+                continue
             for v in part.data.vertices:
                 inside = any(all(n.dot(v.co - o) <= eps for n, o in planes) for planes in hulls)
                 self.assertTrue(inside, f"{part.name} vertex {tuple(v.co)} outside every collider")

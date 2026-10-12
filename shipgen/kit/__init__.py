@@ -20,7 +20,7 @@ from .. import params as params_mod
 from .. import stats
 from ..generator import Ship, clear, materials, shapes, wings
 from ..generator.hull import CLASS_PROFILES, Station
-from . import collision, engine_designs, module_designs, normalize, rig_designs
+from . import collision, engine_designs, greeble_designs, module_designs, normalize, rig_designs
 from .hull_kit import Design, HullLayout, Socket, layout_body, loft_body, section_at, RIDGE
 
 COLLECTION = "ShipGen"
@@ -410,11 +410,14 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
             i.verts = []
         warnings.append(f"{FIT_ISSUE}{group} dropped to stay within max_tris")
 
+    _add_greebles(p, stream, parts_bm, instances, obstacles, col_bodies, length, beam, chamfer, hull_bm, tris)
+
     col_pieces = [seg for b in col_bodies for seg in collision.merge(collision.body_segments(b, length, chamfer, ridge))]
     col_pieces += col_extras
-    col_pieces += [[v.co.copy() for v in i.verts] for i in instances if i.verts and i.verts[0].is_valid]
+    col_pieces += [[v.co.copy() for v in i.verts] for i in instances
+                   if i.kind != "greeble" and i.verts and i.verts[0].is_valid]  # greebles: too small to collide
 
-    role_of = {"engine": "engines", "rig": "mining", "module": "cargo", "wing": "wings"}
+    role_of = {"engine": "engines", "rig": "mining", "module": "cargo", "wing": "wings", "greeble": "greebles"}
     parts_bm.verts.index_update()
     role_verts: dict[str, set] = {"engines": {v.index for v in pylon_verts if v.is_valid}}
     for inst in instances:
@@ -556,6 +559,62 @@ class _StatsHull:
 KIT_MINING_EFFICIENCY = {"drill": 11.833, "laser": 15.317, "claw": 19.635, "scoop": 17.67}
 
 
+# ---------------------------------------------------------------- greebles
+
+GREEBLE_STEP = 0.07  # spacing of candidate spots along the hull (fraction of the length)
+GREEBLE_STYLE = 3  # designs per ship, so a ship looks coherent
+
+
+def _add_greebles(p, stream, bm, instances, obstacles, bodies, length, beam, chamfer, hull_bm, tris) -> None:
+    """Small details on free roof / side spots, in mirrored pairs; skipped where they would touch
+    anything else, and only while the triangle budget lasts."""
+    density = p["greeble_density"]
+    if density <= 0:
+        return
+    rng = random.Random(f"{stream}:greebles")
+    style = rng.sample(range(len(greeble_designs.DESIGNS)), GREEBLE_STYLE)
+    taken = [i.box() for i in instances if i.verts and i.verts[0].is_valid] + list(obstacles)
+    spots = []  # (pair of (pos, normal)), front to back
+    lay = bodies[0]
+    n_steps = int(0.9 / GREEBLE_STEP)
+    for k in range(n_steps):
+        y = (-0.5 + 0.05 + k * GREEBLE_STEP) * length
+        st = section_at(lay, y, length)
+        if st.half_width < 0.05 * beam:
+            continue
+        roof_w = st.half_width * (1.0 - 0.7 * chamfer)
+        cx = lay.x_offset
+        twin = len(bodies) > 1
+        for x, z, n in ((cx, st.top, (0, 0, 1)), (cx + 0.55 * roof_w, st.top, (0, 0, 1)),
+                        (cx + st.half_width, 0.25 * st.top, (1, 0, 0))):
+            right = (Vector((x, y, z)), Vector(n))
+            mirrored = (Vector((-x, y, z)), Vector((-n[0], n[1], n[2])))
+            if abs(x) < 1e-6 and not twin:
+                spots.append((right,))  # centre line of a mono hull
+            else:
+                spots.append((right, mirrored))
+    rng.shuffle(spots)
+    for spot in spots:
+        if rng.random() > density:
+            continue
+        if tris(hull_bm) + tris(bm) > p["max_tris"] - 200:
+            break
+        design = rng.choice(style)
+        m = beam * rng.uniform(0.05, 0.1)
+        group = f"greeble_{len(instances)}"
+        placed = []
+        for pos, normal in spot:
+            sk = Socket("greeble", pos, normal, m, group)
+            before = set(bm.verts)
+            greeble_designs.build(bm, design, pos, normal, m)
+            placed.append(Instance("greeble", group, group, [v for v in bm.verts if v not in before], sk))
+        if any(inst.box().overlaps(other) for inst in placed for other in taken):
+            bmesh.ops.delete(bm, geom=[v for inst in placed for v in inst.verts], context="VERTS")
+            continue
+        instances.extend(placed)
+        taken.extend(inst.box() for inst in placed)
+
+
 # ---------------------------------------------------------------- collisions
 
 MARGIN = 1e-3
@@ -589,7 +648,7 @@ class Instance:
         return Box(self.kind, lo, hi)
 
 
-PRIORITY = {"module": 0, "wing": 1, "rig": 2, "engine": 3}  # lowest is dropped first
+PRIORITY = {"greeble": -1, "module": 0, "wing": 1, "rig": 2, "engine": 3}  # lowest is dropped first
 
 
 def find_conflicts_after(ship: "KitShip") -> list:

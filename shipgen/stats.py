@@ -12,7 +12,7 @@ import math
 import bmesh
 
 # t per m^3 of mesh volume (hulls and modules are mostly hollow)
-DENSITY = {"hull": 0.12, "wings": 0.25, "engines": 0.4, "mining": 0.5, "cargo": 0.08}
+DENSITY = {"hull": 0.12, "wings": 0.25, "engines": 0.4, "mining": 0.5, "cargo": 0.08, "greebles": 0.0}
 THRUST_PER_NOZZLE_M2 = 250.0  # kN per m^2 of glowing nozzle area
 HULL_HP_PER_M2 = 10.0
 USABLE_MODULE_VOLUME = 0.85
