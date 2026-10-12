@@ -59,6 +59,31 @@ Regeln, die „passt immer“ garantieren:
 Die Sockel werden als leere Nodes (`Socket_engine_0` …) in die `.glb` exportiert. Godot kann
 damit später Teile tauschen (Triebwerk nachrüsten), ohne neu zu generieren.
 
+## 3. Rigs und Module (Stand)
+
+- **10 Rigs** (`kit/rig_designs.py`): Bohrer (Kegel, Dreifach, Fräswalze), Laser (einzeln, doppelt,
+  Array), Klauen (2 und 4 Arme), Schaufeln (Trichter, Ring). `mining.type` wählt die Art, der
+  Seed das Design. Spitze Bugs haben keine Stirnfläche → kein Rig (Warnung); Miner dürfen nur
+  stumpfe Bugs, Hammerköpfe oder Gabeln wählen.
+- **10 Module** (`kit/module_designs.py`): Container (Kiste, gerippt, Doppel), Erz (Hopper, Skip),
+  Tanks (Zylinder, Zwilling, Kugeln), Habitat (Trommel, Block). Bauraum je Seitensockel:
+  Tiefe 1 × Länge 2 × Höhe 1, immer paarweise gespiegelt. Bei Seitenkästen sitzen sie außen
+  an den Kästen.
+
+## 4. Kollisionen
+
+Jedes Teil wird als Instanz verfolgt; geprüft wird seine Hüllbox *außerhalb* seiner Montage
+(der eingesteckte Fuß darf im Rumpf sitzen). Rumpf-Anbauten (Zinken, Kästen, Brücken,
+Twin-Rümpfe) sind Hindernisse. Bei Treffern wird das unwichtigste Teil entfernt
+(Modulpaar → Rig → Triebwerk) und gewarnt. `scripts/kit_conflicts.py` baut alle 240 Rümpfe
+× 4 Rig-Arten × 4 Fracht-Arten mit Stress-Loadout und zählt, was womit kollidiert
+(`docs/kit/conflicts.md`). Erster Lauf: Rig gegen Gabelzinken in allen 480 Gabel-Builds
+(Sockel zu breit) → behoben, jetzt 0.
+
+**Später für Godot:** dieselben Instanzen liefern Kollisionsformen. Godot erzeugt beim Import
+Collision-Shapes aus Meshes mit dem Suffix `-convcolonly` (konvex, unsichtbar). Plan: pro
+Rumpfsektion und pro Teil eine konvexe Hülle exportieren.
+
 ## Prototyp-Umfang
 
 - `shipgen/kit/`: Sektionen + Baupläne + Sockel, 10 Triebwerks-Designs, Container an

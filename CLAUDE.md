@@ -58,9 +58,12 @@ generate without warnings (`test_presets_generate_cleanly`).
   `shapes.py` (low-poly primitives), `materials.py`. Planned: `greebles.py`.
 - `shipgen/stats.py` – gameplay stats from geometry (see above).
 - `shipgen/kit/` – **prototype** (branch `claude/parts-kit-prototype`): hulls from designed
-  sections with a standard joint + body plans (mono/twin/fork), parts on sockets, 10 engine
-  designs in unit size. Concept: `docs/parts_kit.md`; fit checks: `tests/test_kit.py`;
-  sheets: `scripts/kit_demo.py` → `docs/kit/`. Not yet wired into `generate()`/CLI.
+  sections with a standard joint + body plans (mono/twin/fork), parts on sockets: 10 engine,
+  10 rig and 10 module designs in unit size, collision check + resolver. Concept:
+  `docs/parts_kit.md`; fit checks: `tests/test_kit.py`; collision report:
+  `scripts/kit_conflicts.py`; sheets: `scripts/kit_demo.py` → `docs/kit/`. Every new part
+  design must honour the unit contract in its module docstring. Not yet wired into
+  `generate()`/CLI, no stats yet.
 - `shipgen/metrics.py` – top-view silhouette metrics (numpy rasteriser).
 - `shipgen/export.py` – `.glb`, `.blend`, Cycles previews (`three_quarter` and orthographic `top`).
 - `shipgen/ui.py` – sidebar panel "ShipGen"; properties generated from the schema

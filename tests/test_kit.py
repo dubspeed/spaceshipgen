@@ -103,6 +103,28 @@ class KitShipTest(unittest.TestCase):
             self.assertIn(plan, kit["plans"])
             self.assertIn(tail, kit["tails"])
 
+    def test_rigs_and_modules_fit_every_hull_without_collisions(self):
+        """Stress loadout on every hull: nothing may collide, nothing may be dropped (regression:
+        the fork socket used to be wider than the gap between its prongs)."""
+        from shipgen.kit import hull_kit as hk
+
+        for i, (plan, tail, mid, nose) in enumerate(itertools.product(hk.PLANS, hk.TAILS, hk.MIDS, hk.NOSES)):
+            rig = ("drill", "laser", "claw", "scoop")[i % 4]
+            cargo = ("containers", "hoppers", "tanks", "habitat")[(i // 4) % 4]
+            p = dict(self.base, mining=dict(self.base["mining"], type=rig, size=1.0),
+                     cargo=dict(self.base["cargo"], type=cargo, modules=8, size=0.8))
+            with self.subTest(design=f"{plan}/{tail}/{mid}/{nose}", rig=rig, cargo=cargo):
+                ship = self.kit.build(p, plan=plan, tail=tail, mid=mid, nose=nose)
+                self.assertEqual(ship.conflicts, [])
+                self.assertFalse([w for w in ship.warnings if "collided" in w], ship.warnings)
+                pointed = plan == "mono" and hk.NOSES[nose].keys[-1][1] == 0  # no mount face: no rig
+                self.assertEqual(ship.loadout["rig"] == "none", pointed, ship.warnings)
+                self.check_ship(ship)
+
+    def test_part_designs_vary_with_the_seed(self):
+        loadouts = {tuple(self.kit.build(dict(self.base, seed=s)).loadout.values()) for s in range(1, 13)}
+        self.assertGreaterEqual(len(loadouts), 5, loadouts)
+
     def test_sockets_are_exported_for_godot(self):
         import json
         import struct
@@ -120,6 +142,56 @@ class KitShipTest(unittest.TestCase):
         sockets = [n for n in gltf["nodes"] if n["name"].startswith("Socket_")]
         self.assertEqual(len(sockets), len(ship.sockets))
         self.assertTrue(all("shipgen_socket" in n.get("extras", {}) for n in sockets))
+
+
+@unittest.skipIf(bpy is None, "requires Blender (bpy)")
+class CollisionCheckTest(unittest.TestCase):
+    """The checker itself: it must see real overlaps and drop the right part."""
+
+    def setUp(self):
+        from mathutils import Vector
+
+        from shipgen import kit
+        from shipgen.kit import module_designs, rig_designs
+        from shipgen.kit.hull_kit import Socket
+
+        self.kit, self.Vector = kit, Vector
+        self.bm = bmesh.new()
+        self.instances = []
+
+        def place(kind, group, builder, pos, normal, radius):
+            sk = Socket(kind, Vector(pos), Vector(normal), radius, group)
+            before = set(self.bm.verts)
+            builder(self.bm, 0, sk.pos, sk.normal, radius)
+            self.instances.append(kit.Instance(kind, group, group, [v for v in self.bm.verts if v not in before], sk))
+
+        self.place, self.module_designs, self.rig_designs = place, module_designs, rig_designs
+
+    def tearDown(self):
+        self.bm.free()
+
+    def test_detects_overlap_and_drops_the_lower_priority_part(self):
+        # a module mounted right in front of the rig: it sticks into the rig's space
+        self.place("rig", "rig", self.rig_designs.build, (0, 0, 0), (0, 1, 0), 1.0)
+        self.place("module", "modules_0", self.module_designs.build, (-0.5, 1.0, 0), (1, 0, 0), 0.6)
+        self.assertIn(("module", "rig"), self.kit.find_conflicts(self.instances, []))
+        dropped = self.kit.resolve_conflicts(self.bm, self.instances, [])
+        self.assertEqual(dropped, ["modules_0"])
+        self.assertEqual(self.kit.find_conflicts(self.instances, []), [])
+
+    def test_separate_parts_do_not_conflict(self):
+        self.place("rig", "rig", self.rig_designs.build, (0, 0, 0), (0, 1, 0), 1.0)
+        self.place("module", "modules_0", self.module_designs.build, (3.0, -4.0, 0), (1, 0, 0), 0.6)
+        self.assertEqual(self.kit.find_conflicts(self.instances, []), [])
+
+    def test_obstacles_only_apply_to_their_kinds(self):
+        from shipgen.kit import Box
+
+        self.place("rig", "rig", self.rig_designs.build, (0, 0, 0), (0, 1, 0), 1.0)
+        prong = Box("prong", self.Vector((-0.3, 0.5, -0.3)), self.Vector((0.3, 1.5, 0.3)), {"module"})
+        self.assertEqual(self.kit.find_conflicts(self.instances, [prong]), [])
+        prong.applies_to = {"rig"}
+        self.assertEqual(self.kit.find_conflicts(self.instances, [prong]), [("rig", "prong")])
 
 
 if __name__ == "__main__":

@@ -94,7 +94,7 @@ class Design:
     nose: str
 
     @classmethod
-    def pick(cls, cls_name: str, seed: int, **overrides) -> "Design":
+    def pick(cls, cls_name: str, seed, **overrides) -> "Design":
         kit = CLASS_KIT[cls_name]
         rng = random.Random(f"{seed}:design")
         d = cls(rng.choice(kit["plans"]), rng.choice(kit["tails"]), rng.choice(kit["mids"]), rng.choice(kit["noses"]))
