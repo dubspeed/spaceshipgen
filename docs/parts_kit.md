@@ -80,9 +80,16 @@ Twin-Rümpfe) sind Hindernisse. Bei Treffern wird das unwichtigste Teil entfernt
 (`docs/kit/conflicts.md`). Erster Lauf: Rig gegen Gabelzinken in allen 480 Gabel-Builds
 (Sockel zu breit) → behoben, jetzt 0.
 
-**Später für Godot:** dieselben Instanzen liefern Kollisionsformen. Godot erzeugt beim Import
-Collision-Shapes aus Meshes mit dem Suffix `-convcolonly` (konvex, unsichtbar). Plan: pro
-Rumpfsektion und pro Teil eine konvexe Hülle exportieren.
+**Godot-Kollisionsformen** (`kit/collision.py`): Godot erzeugt beim Import aus jedem Mesh mit
+dem Suffix `-convcolonly` eine unsichtbare konvexe Collision-Shape. Exportiert werden:
+jeder Rumpfkörper zwischen je zwei Querschnitten zerschnitten (jedes Stück ist konvex) und
+benachbarte Stücke zusammengelegt, solange ihre gemeinsame Hülle ≤ 6 % größer ist (so bleibt
+eine Taille eine Taille); dazu je eine Hülle pro Zinke/Kasten/Brücke/Pylon und pro Anbauteil.
+Typisch 12–17 Shapes pro Schiff. Tests prüfen: jede Shape konvex, jeder sichtbare Vertex liegt
+in mindestens einer Shape (keine Lücken), Namen kommen in der `.glb` an.
+Hinweis für Godot: `-convcolonly`-Nodes werden beim Import zu StaticBody3D mit
+CollisionShape3D; für ein bewegtes Schiff die CollisionShape3D-Kinder unter den eigenen
+RigidBody3D/CharacterBody3D hängen (oder im Import-Skript umhängen).
 
 ## Prototyp-Umfang
 

@@ -145,6 +145,76 @@ class KitShipTest(unittest.TestCase):
 
 
 @unittest.skipIf(bpy is None, "requires Blender (bpy)")
+class GodotColliderTest(unittest.TestCase):
+    """Convex collision shapes: convex, gap-free cover of the visible ship, Godot naming."""
+
+    @classmethod
+    def setUpClass(cls):
+        from shipgen import kit
+
+        cls.kit = kit
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        cls.base = dict(params.load(os.path.join(ROOT, "presets", "miner_m.json")).params, spread=0)
+
+    @staticmethod
+    def planes(obj):
+        mesh = obj.data
+        return [(p.normal.copy(), mesh.vertices[p.vertices[0]].co.copy()) for p in mesh.polygons]
+
+    def check(self, ship):
+        self.assertTrue(ship.colliders)
+        self.assertLessEqual(len(ship.colliders), 40, "too many shapes for a game object")
+        length = ship.params["hull"]["length"]
+        eps = 1e-3 * length
+        hulls = []
+        for col in ship.colliders:
+            self.assertTrue(col.name.endswith("-convcolonly"), col.name)
+            self.assertTrue(col.hide_render)
+            planes = self.planes(col)
+            for v in col.data.vertices:  # convex: no vertex in front of any face
+                self.assertTrue(all(n.dot(v.co - o) <= eps for n, o in planes), f"{col.name} is not convex")
+            hulls.append(planes)
+        for part in ship.parts:
+            for v in part.data.vertices:
+                inside = any(all(n.dot(v.co - o) <= eps for n, o in planes) for planes in hulls)
+                self.assertTrue(inside, f"{part.name} vertex {tuple(v.co)} outside every collider")
+
+    def test_colliders_cover_every_hull_combination(self):
+        from shipgen.kit import hull_kit as hk
+
+        for i, (plan, tail, mid, nose) in enumerate(itertools.product(hk.PLANS, hk.TAILS, hk.MIDS, hk.NOSES)):
+            if i % 3:  # every third combination keeps the test fast; all blocks still appear
+                continue
+            with self.subTest(design=f"{plan}/{tail}/{mid}/{nose}"):
+                self.check(self.kit.build(self.base, plan=plan, tail=tail, mid=mid, nose=nose))
+
+    def test_waist_is_not_one_big_box(self):
+        """Concave shapes must be split: a waisted hull needs more than one hull collider."""
+        ship = self.kit.build(self.base, plan="mono", tail="flat", mid="waist", nose="blunt")
+        straight = self.kit.build(self.base, plan="mono", tail="flat", mid="straight", nose="blunt")
+        n_parts = len([i for i in ship.instances if i.verts])
+        self.assertGreater(len(ship.colliders) - n_parts, len(straight.colliders) - n_parts)
+
+    def test_colliders_are_exported(self):
+        import json
+        import struct
+        import tempfile
+
+        from shipgen import export
+
+        ship = self.kit.build(self.base)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = export.export_glb(ship, os.path.join(tmp, "kit.glb"))
+            with open(path, "rb") as f:
+                f.read(12)
+                n, _ = struct.unpack("<II", f.read(8))
+                gltf = json.loads(f.read(n))
+        names = [n["name"] for n in gltf["nodes"] if n["name"].endswith("-convcolonly")]
+        self.assertEqual(len(names), len(ship.colliders))
+        self.assertLess(ship.stats()["tris"], 10_000)  # colliders don't count as ship geometry
+
+
+@unittest.skipIf(bpy is None, "requires Blender (bpy)")
 class CollisionCheckTest(unittest.TestCase):
     """The checker itself: it must see real overlaps and drop the right part."""
 

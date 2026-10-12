@@ -19,7 +19,7 @@ from mathutils import Vector
 from .. import params as params_mod
 from ..generator import Ship, clear, materials, shapes
 from ..generator.hull import Station
-from . import engine_designs, module_designs, rig_designs
+from . import collision, engine_designs, module_designs, rig_designs
 from .hull_kit import Design, HullLayout, Socket, layout_body, loft_body, section_at, RIDGE
 
 COLLECTION = "ShipGen"
@@ -31,6 +31,7 @@ class KitShip(Ship):
     design: Design | None = None
     sockets: list[Socket] = field(default_factory=list)
     socket_objects: list = field(default_factory=list)
+    colliders: list = field(default_factory=list)  # convex "-convcolonly" meshes for Godot
     engine_design: int = 0
     loadout: dict = field(default_factory=dict)
     conflicts: list = field(default_factory=list)  # collisions found before resolving
@@ -39,10 +40,17 @@ class KitShip(Ship):
 
     @property
     def objects(self):
-        return [self.root, *self.parts, *self.socket_objects]
+        return [self.root, *self.parts, *self.socket_objects, *self.colliders]
 
 
 # ---------------------------------------------------------------- hull pieces
+
+def _grab(bm, fn) -> list:
+    """Run ``fn`` and return copies of the vertex positions it added to ``bm``."""
+    before = set(bm.verts)
+    fn()
+    return [v.co.copy() for v in bm.verts if v not in before]
+
 
 def _mini_body(bm, x, y_back, y_front, w, top, bottom, chamfer, ridge, length, pointed=True):
     """Small lofted body (fork prong, sponson pod): wedge-ended on both sides."""
@@ -144,6 +152,8 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
     sockets: list[Socket] = []
     warnings: list[str] = []
     obstacles: list[Box] = []  # hull add-ons parts must not cut into
+    col_bodies: list[HullLayout] = []  # lofted bodies, cut into convex segments for collision
+    col_extras: list[list] = []  # point sets of hull add-ons and pylons (one convex shape each)
     n_eng, r_req = p["engines"]["count"], 0.5 * p["engines"]["size"]
     module = 0.6 * beam * (0.7 + 0.6 * p["cargo"]["size"])
 
@@ -164,19 +174,20 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
             loft_body(hull_bm, lay, length, chamfer, ridge)
             add_body_boxes(lay, {"rig"})
             bodies.append(lay)
+            col_bodies.append(lay)
         lay = bodies[0]
         for f in (0.25, 0.75):  # bridges between the hulls
             y = lay.y_mid[0] + f * (lay.y_mid[1] - lay.y_mid[0])
             size = Vector((2 * (sub_beam + 0.5 * gap), 0.1 * length, 0.35 * height))
             centre = Vector((0, y, 0.15 * height))
-            shapes.box(hull_bm, centre, size)
+            col_extras.append(_grab(hull_bm, lambda c=centre, sz=size: shapes.box(hull_bm, c, sz)))
             obstacles.append(Box("bridge", centre - size / 2, centre + size / 2, {"rig", "module", "engine"}))
         for b in bodies:
             sk, py, r = _engine_sockets(n_eng // 2, r_req, b.x_offset, b.y_tail, b.stations[0],
                                         design.tail == "outboard")
             sockets += sk
             for a, c, rr in py:
-                shapes.beam(parts_bm, a, c, 0.5 * rr, 0.25 * rr, 0)
+                col_extras.append(_grab(parts_bm, lambda a=a, c=c, rr=rr: shapes.beam(parts_bm, a, c, 0.5 * rr, 0.25 * rr, 0)))
             sockets += _side_sockets(b, length, module, b.x_offset, outer_only_sign=1 if b.x_offset > 0 else -1)
         if n_eng % 2:
             warnings.append("twin hulls need an even engine count; one engine dropped")
@@ -184,13 +195,14 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
     else:
         lay = layout_body(design, length, beam, height, p["seed"])
         loft_body(hull_bm, lay, length, chamfer, ridge)
+        col_bodies.append(lay)
         tail_face = lay.stations[0]
         sk, py, r = _engine_sockets(n_eng, r_req, 0.0, lay.y_tail, tail_face, design.tail == "outboard")
         if r < r_req * 0.99:
             warnings.append(f"engines.size capped to {2 * r:.2f} to fit the tail")
         sockets += sk
         for a, c, rr in py:
-            shapes.beam(parts_bm, a, c, 0.5 * rr, 0.25 * rr, 0)
+            col_extras.append(_grab(parts_bm, lambda a=a, c=c, rr=rr: shapes.beam(parts_bm, a, c, 0.5 * rr, 0.25 * rr, 0)))
         front = lay.stations[-1]
         if design.mid == "sponson":
             pw = 0.32 * beam
@@ -199,7 +211,8 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
             pod_top, pod_bottom = 0.5 * height * 0.55, 0.5 * height * 0.45
             for s in (1, -1):
                 x = s * (section_at(lay, 0.5 * (y_a + y_b), length).half_width + 0.5 * pw)
-                _mini_body(hull_bm, x, pod_a, pod_b, pw, pod_top, pod_bottom, chamfer, ridge, length, pointed=False)
+                col_extras.append(_grab(hull_bm, lambda x=x: _mini_body(
+                    hull_bm, x, pod_a, pod_b, pw, pod_top, pod_bottom, chamfer, ridge, length, pointed=False)))
                 obstacles.append(Box("pod", Vector((x - pw, pod_a, -pod_bottom)), Vector((x + pw, pod_b, pod_top)),
                                      {"rig", "module", "engine"}))
             # modules mount on the pods' outer faces instead of the hull side
@@ -219,7 +232,8 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
             for s in (1, -1):
                 x = s * (front.half_width - pw * 0.6)
                 y0, y1 = lay.y_front - 0.08 * length, lay.y_front + 0.22 * length
-                _mini_body(hull_bm, x, y0, y1, pw, front.top * 0.8, front.bottom * 0.8, chamfer, ridge, length)
+                col_extras.append(_grab(hull_bm, lambda x=x, y0=y0, y1=y1: _mini_body(
+                    hull_bm, x, y0, y1, pw, front.top * 0.8, front.bottom * 0.8, chamfer, ridge, length)))
                 obstacles.append(Box("prong", Vector((x - pw, y0, -front.bottom)), Vector((x + pw, y1, front.top)),
                                      {"rig", "module"}))
             inner = front.half_width - 1.6 * pw  # inner face of the prongs
@@ -280,6 +294,10 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
         for group in dropped:
             warnings.append(f"{group} dropped: collided with another part")
 
+    col_pieces = [seg for b in col_bodies for seg in collision.merge(collision.body_segments(b, length, chamfer, ridge))]
+    col_pieces += col_extras
+    col_pieces += [[v.co.copy() for v in i.verts] for i in instances if i.verts and i.verts[0].is_valid]
+
     parts = []
     for name, bm, mat_keys in (("Ship_Hull", hull_bm, ("hull",)), ("Ship_Parts", parts_bm, ("accent", "glow", "cargo"))):
         if not bm.faces:
@@ -298,6 +316,8 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
         obj.parent = root
         obj["shipgen_role"] = name.removeprefix("Ship_").lower()
         parts.append(obj)
+
+    colliders = collision.build_colliders(col_pieces, coll, root)
 
     socket_objects = []
     for sk in sockets:  # hardpoints for Godot (local +Y = socket normal -> Godot -Z forward)
@@ -321,7 +341,7 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
     }
     root["shipgen"] = {"seed": p["seed"], "class": p["class"], "design": design.label(), **loadout}
     return KitShip(root=root, parts=parts, params=p, warnings=warnings, design=design, sockets=sockets,
-                   socket_objects=socket_objects, engine_design=engine_design, loadout=loadout,
+                   socket_objects=socket_objects, colliders=colliders, engine_design=engine_design, loadout=loadout,
                    conflicts=conflicts, instances=instances, obstacles=obstacles)
 
 
