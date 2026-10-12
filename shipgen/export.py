@@ -88,7 +88,8 @@ def setup_preview(
 ) -> bpy.types.Object:
     """Add camera + lights framing the ship and configure Cycles on the CPU.
 
-    ``view``: "three_quarter" (perspective, front right above) or "top"
+    ``view``: "three_quarter" (perspective, front right above), "rear" (rear
+    right above, to judge engines) or "top"
     (orthographic, nose pointing right; for judging silhouettes).
     ``frame``: frame a fixed length in metres instead of fitting the ship, so
     ships of different sizes render at the same scale (shop lineups).
@@ -120,8 +121,8 @@ def setup_preview(
         cam.rotation_euler = (0.0, 0.0, math.pi / 2)  # image right = +Y (nose)
         distance = radius * 3
         cam.location = center + Vector((0.0, 0.0, distance))
-    elif view == "three_quarter":
-        view_dir = Vector((1.0, 0.9, 0.6)).normalized()
+    elif view in ("three_quarter", "rear"):
+        view_dir = Vector((1.0, 0.9, 0.6) if view == "three_quarter" else (0.9, -1.0, 0.55)).normalized()
         cam.location = center + view_dir * radius * 4
         _look_at(cam, center)
         tan_h = cam_data.sensor_width / 2 / cam_data.lens  # sensor_fit AUTO: width is the long side

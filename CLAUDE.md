@@ -57,6 +57,10 @@ generate without warnings (`test_presets_generate_cleanly`).
   `engines.py`, `mining.py` (nose rigs), `cargo.py` (modules in symmetric lanes),
   `shapes.py` (low-poly primitives), `materials.py`. Planned: `greebles.py`.
 - `shipgen/stats.py` – gameplay stats from geometry (see above).
+- `shipgen/kit/` – **prototype** (branch `claude/parts-kit-prototype`): hulls from designed
+  sections with a standard joint + body plans (mono/twin/fork), parts on sockets, 10 engine
+  designs in unit size. Concept: `docs/parts_kit.md`; fit checks: `tests/test_kit.py`;
+  sheets: `scripts/kit_demo.py` → `docs/kit/`. Not yet wired into `generate()`/CLI.
 - `shipgen/metrics.py` – top-view silhouette metrics (numpy rasteriser).
 - `shipgen/export.py` – `.glb`, `.blend`, Cycles previews (`three_quarter` and orthographic `top`).
 - `shipgen/ui.py` – sidebar panel "ShipGen"; properties generated from the schema
