@@ -28,9 +28,13 @@ class AsteroidTest(unittest.TestCase):
         bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
         closed = all(e.is_manifold for e in bm.edges)
         degenerate = any(f.calc_area() <= 1e-9 for f in bm.faces)
-        eps = 1e-3 * max(obj.dimensions)  # merged facets are planar to ~1e-4 of the chunk size
-        convex = all(f.normal.dot(v.co - f.calc_center_median()) <= eps for f in bm.faces for v in bm.verts)
         vol = abs(bm.calc_volume())
+        # convex = the mesh is its own convex hull (what Godot builds from the vertices); face
+        # normals of thin slivers are too noisy to test against
+        hull = bmesh.new()
+        bmesh.ops.convex_hull(hull, input=[hull.verts.new(v.co) for v in bm.verts])
+        convex = abs(abs(hull.calc_volume()) - vol) <= 1e-3 * max(vol, 1e-9)
+        hull.free()
         bm.free()
         return closed, degenerate, convex, vol
 

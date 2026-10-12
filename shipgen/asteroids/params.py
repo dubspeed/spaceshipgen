@@ -21,7 +21,7 @@ SCHEMA: dict[str, Any] = {
     "min_chunk_m": Field(float, 4.0, 0.5, 100.0, description="Chunks smaller than about twice this don't break further"),
     "max_levels": Field(int, 4, 1, 6, description="Break levels prepared in advance"),
     "richness": Field(float, 0.6, 0.0, 1.0, description="Share of chunks that carry the resource (rest is plain rock)"),
-    "gap": Field(float, 0.03, 0.0, 0.15, description="Crack width between chunks, relative to the chunk size"),
+    "gap": Field(float, 0.03, 0.0, 0.15, description="Crack width between chunks: gap x size_m / 2"),
     "max_tris": Field(int, 30000, 500, 500000, description="Triangle budget for all levels together"),
 }
 

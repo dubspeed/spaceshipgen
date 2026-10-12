@@ -60,7 +60,7 @@ INHERIT_RICH = 0.85  # a rich chunk's pieces stay rich with this chance
 class Chunk:
     name: str
     level: int
-    points: list  # vertices of the convex chunk before shrinking (world space)
+    points: list  # vertices of the convex chunk before its cracks are cut (world space)
     rich: bool
     children: list["Chunk"] = field(default_factory=list)
     obj: object = None
@@ -131,7 +131,7 @@ def _base_pieces(p, rng) -> list[list[Vector]]:
 
 def _fracture(p, levels: int) -> tuple[list[Chunk], list[tuple[Vector, float]]]:
     """Chunk tree + every fracture plane (break faces lie on one of them)."""
-    rng = random.Random(f"{p['seed']}:asteroid")
+    rng = random.Random(f"{p['seed']}:{p['composition']}:asteroid")
     pieces = _base_pieces(p, rng)
     fractures: list[tuple[Vector, float]] = []
     total = sum(geo.volume(pc) for pc in pieces)
@@ -191,10 +191,13 @@ def _materials(comp: str) -> dict:
     return out
 
 
-def _on_fracture(face, fractures, tol: float) -> bool:
-    n = face.normal
-    d = n.dot(face.verts[0].co)
-    return any(n.dot(fn) > 0.9999 and abs(d - fd) < tol for fn, fd in fractures)
+def _on_fracture(n: Vector, d: float, fractures, tol: float, inset: float = 0.0) -> bool:
+    """Does the plane (n, d) lie on a fracture plane (either side of it), moved ``inset`` inwards?"""
+    for fn, fd in fractures:
+        k = n.dot(fn)
+        if abs(k) > 0.9999 and abs(d - (fd if k > 0 else -fd) + inset) < tol:
+            return True
+    return False
 
 
 def _build_objects(p, tree: list[Chunk], fractures) -> Asteroid:
@@ -208,18 +211,26 @@ def _build_objects(p, tree: list[Chunk], fractures) -> Asteroid:
     tol = 1e-4 * p["size_m"]
     chunks = list(_walk(tree))
 
+    crack = 0.5 * p["gap"] * p["size_m"]
+
     def make(chunk: Chunk, parent, parent_c: Vector) -> None:
-        bm = geo.hull_bmesh(chunk.points)
+        # cracks of constant width: only the break faces move in (half a crack each), the rock
+        # surface stays where it is, so small chunks never stick out of big shrunk ones
+        inset = min(0.5 * crack, 0.1 * geo.diameter(chunk.points))
+        pts = chunk.points
+        for n, d in geo.planes(chunk.points):
+            if _on_fracture(n, d, fractures, tol):
+                pts = geo.clip(pts, n, d - inset)
+        bm = geo.hull_bmesh(pts)
         rng = random.Random(f"{p['seed']}:vein:{chunk.name}")
         for f in bm.faces:
-            if _on_fracture(f, fractures, tol):
+            if _on_fracture(f.normal, f.normal.dot(f.calc_center_median()), fractures, tol, inset):
                 f.material_index = 2 if chunk.rich else 1
             else:
                 f.material_index = 2 if chunk.rich and rng.random() < VEIN_SHARE else 0
         c = geo.centroid([v.co for v in bm.verts])
-        shrink = 1.0 - p["gap"]  # cracks between neighbours
         for v in bm.verts:
-            v.co = (v.co - c) * shrink
+            v.co -= c
         mesh = bpy.data.meshes.new(chunk.name)
         bm.to_mesh(mesh)
         bm.free()

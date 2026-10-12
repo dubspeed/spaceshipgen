@@ -12,6 +12,7 @@ Bilder: `scripts/asteroid_demo.py`.
 - `types.png`: Erz / Metall / Eis (Zeilen) × rund / länglich / Doppel (Spalten), je 24 m
 - `levels.png`: ein 30-m-Erzasteroid, ganz und dann Ebene 1–3 auseinandergezogen
 - `scale.png`: 24-m-Asteroid neben dem `miner_m` (26 m)
+- `variants_*.png`: je 9 Seeds pro Stoff (14–40 m, alle Formen, 14–32 Facettenpunkte)
 
 ## Aufbau
 
@@ -56,4 +57,4 @@ Taube Brocken liefern 5 %. Idee für das Spiel: Abbauzeit ≈ Härte × Ertrag �
 
 - Panel in Blender (bisher nur Kommandozeile/Python).
 - Krater, Gase (Gaswolken/Kometen) später.
-- Doppel-Asteroid: an der Taille kann eine kleine flache Kontaktfläche sichtbar sein.
+
