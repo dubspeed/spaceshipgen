@@ -97,9 +97,11 @@ same class, mining and cargo type share the seed streams).
 - `shipgen/asteroids/` – asteroid generator (prototype, `docs/asteroids/README.md`): own schema
   (`params.py`, same `Field`/`validate` machinery), `geometry.py` (convex polytopes as point
   lists: hull, half-space clip, Voronoi cells), `__init__.py` (`generate`: faceted rock,
-  pre-fractured into convex chunks level by level down to `min_chunk_m`; every chunk is a
-  `-convcol` mesh, deeper levels parented under their chunk and hidden; per-chunk stats from
-  the mesh; `COMPOSITION` = ore/metal/ice constants). Presets in `presets/asteroids/`.
+  pre-fractured into convex chunks level by level down to `min_chunk_m`; surface faces roughened
+  by `surface.py` (world-space noise + craters, so neighbours and sub-chunks match); each chunk
+  has a convex `<name>_col-convcolonly` child (exact hull of its vertices); deeper levels are
+  parented under their chunk and hidden; per-chunk stats from the mesh; `COMPOSITION` =
+  ore/metal/ice constants). Presets in `presets/asteroids/`.
 - `shipgen/metrics.py` – top-view silhouette metrics (numpy rasteriser).
 - `shipgen/export.py` – `.glb`, `.blend`, Cycles previews (`three_quarter` and orthographic `top`).
 - `shipgen/ui.py` – sidebar panel "ShipGen"; properties generated from the schema

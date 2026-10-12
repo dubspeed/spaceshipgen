@@ -1,4 +1,5 @@
-"""Asteroid generator: convex chunks that tile their parent, down to the minimum size."""
+"""Asteroid generator: chunks that tile their parent down to the minimum size, each with a
+convex collider that covers its (roughened) mesh."""
 
 import os
 import tempfile
@@ -38,6 +39,21 @@ class AsteroidTest(unittest.TestCase):
         bm.free()
         return closed, degenerate, convex, vol
 
+    @staticmethod
+    def covers(collider, obj) -> bool:
+        """Every vertex of ``obj`` inside the convex ``collider``: adding them to the collider's
+        points must not grow its hull (face normals of tiny triangles are too noisy to test)."""
+        def hull_volume(points):
+            bm = bmesh.new()
+            bmesh.ops.convex_hull(bm, input=[bm.verts.new(p) for p in points])
+            vol = abs(bm.calc_volume())
+            bm.free()
+            return vol
+
+        col = [v.co for v in collider.data.vertices]
+        base = hull_volume(col)
+        return hull_volume(col + [v.co for v in obj.data.vertices]) <= base * (1 + 1e-4)
+
     def test_every_kind(self):
         for comp in self.asteroids.params.COMPOSITIONS:
             for shape in self.asteroids.params.SHAPES:
@@ -47,11 +63,13 @@ class AsteroidTest(unittest.TestCase):
                     self.assertEqual(rock.warnings, [])
                     self.assertGreater(len(rock.parts), 1)
                     for c in rock.chunks:
-                        closed, degenerate, convex, _ = self.mesh_info(c.obj)
+                        closed, degenerate, _, _ = self.mesh_info(c.obj)
                         self.assertTrue(closed, f"{c.name}: open edges")
                         self.assertFalse(degenerate, f"{c.name}: degenerate faces")
-                        self.assertTrue(convex, f"{c.name}: not convex (needed for its collision shape)")
-                        self.assertTrue(c.obj.name.endswith("-convcol"))
+                        self.assertTrue(self.mesh_info(c.collider)[2], f"{c.name}: collider not convex")
+                        self.assertTrue(c.collider.name.endswith("-convcolonly"))
+                        self.assertIs(c.collider.parent, c.obj)
+                        self.assertTrue(self.covers(c.collider, c.obj), f"{c.name}: mesh outside its collider")
                     stats = rock.stats
                     self.assertAlmostEqual(stats["size_m"], 20, delta=0.5)
                     self.assertGreater(stats["yield_m3"], 0)
@@ -59,7 +77,7 @@ class AsteroidTest(unittest.TestCase):
 
     def test_chunks_tile_their_parent_down_to_the_minimum(self):
         p = {"composition": "ore", "size_m": 30, "seed": 5, "min_chunk_m": 4.0, "gap": 0.0, "max_levels": 6,
-             "max_tris": 500000}
+             "max_tris": 500000, "roughness": 0.0, "craters": 0}  # exact tiling needs the plain cells
         rock = self.asteroids.generate(p)
         for c in rock.chunks:
             size = c.obj["asteroid_chunk"]["size_m"]
@@ -75,6 +93,16 @@ class AsteroidTest(unittest.TestCase):
                 self.assertLess(size, 2 * p["min_chunk_m"] * 1.8, f"{c.name} big but not split")
         whole = sum(self.mesh_info(c.obj)[3] for c in rock.chunks if c.level == 1)
         self.assertAlmostEqual(rock.stats["volume_m3"], whole, delta=0.01 * whole)
+
+    def test_roughness_keeps_children_close_to_their_parent(self):
+        """Sub-chunks share the parent's surface (world-space noise): their volumes add up."""
+        rock = self.asteroids.generate({"size_m": 24, "seed": 6, "gap": 0.0})
+        for c in rock.chunks:
+            if c.children:
+                parent = self.mesh_info(c.obj)[3]
+                kids = sum(self.mesh_info(k.obj)[3] for k in c.children)
+                # the push is capped per chunk (thin chunks must not fold), so small ones differ a bit
+                self.assertAlmostEqual(kids / parent, 1.0, delta=0.15, msg=c.name)
 
     def test_same_seed_same_rock(self):
         a = self.asteroids.generate({"seed": 9}).stats
@@ -93,16 +121,18 @@ class AsteroidTest(unittest.TestCase):
         from shipgen import export
 
         rock = self.asteroids.generate({"seed": 4, "size_m": 16})
+        expected = [n for c in rock.chunks for n in (c.obj.name, c.collider.name)]
+        stats = rock.stats
         with tempfile.TemporaryDirectory() as tmp:
             path = export.export_glb(rock, os.path.join(tmp, "rock.glb"))
             bpy.ops.wm.read_factory_settings(use_empty=True)
             bpy.ops.import_scene.gltf(filepath=path)
             names = {o.name for o in bpy.data.objects}
-            for c in rock.chunks:
-                self.assertIn(c.name + "-convcol", names)
+            for name in expected:
+                self.assertIn(name, names)
             imported = bpy.data.objects["Asteroid"]
-            stats = imported["shipgen_asteroid"].to_dict()["stats"]
-            self.assertEqual(stats["chunks_per_level"], rock.stats["chunks_per_level"])
+            imported_stats = imported["shipgen_asteroid"].to_dict()["stats"]
+            self.assertEqual(imported_stats["chunks_per_level"], stats["chunks_per_level"])
 
     def test_presets_generate_cleanly(self):
         folder = os.path.join(ROOT, "presets", "asteroids")

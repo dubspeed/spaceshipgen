@@ -23,6 +23,17 @@ def _scale(points) -> float:
     return max((hi - lo).length, 1e-9)
 
 
+def exact_hull_bmesh(points) -> bmesh.types.BMesh:
+    """Plain convex hull, every hull point kept (for colliders that must cover a mesh exactly)."""
+    bm = bmesh.new()
+    res = bmesh.ops.convex_hull(bm, input=[bm.verts.new(p) for p in points])
+    junk = list({g for g in res["geom_interior"] + res["geom_unused"] if isinstance(g, bmesh.types.BMVert)})
+    if junk:
+        bmesh.ops.delete(bm, geom=junk, context="VERTS")
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return bm
+
+
 def hull_bmesh(points) -> bmesh.types.BMesh:
     """Closed convex hull of ``points`` with outward normals. Interior points are dropped,
     near-duplicates and slivers dissolved and coplanar triangles merged into one facet, so

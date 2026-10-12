@@ -4,8 +4,9 @@
 
 The rock is the convex hull of random points (two hulls cut apart for a binary
 asteroid), split into Voronoi cells; cells bigger than about twice ``min_chunk_m``
-split again, down to ``max_levels``. Every chunk is convex, so in Godot it is its own
-convex collision shape (``-convcol`` suffix: mesh + collider).
+split again, down to ``max_levels``. Chunks are convex; their surface faces are then
+roughened (``surface.py``: smaller triangles, world-space noise, craters), so each chunk
+carries its own convex collider (``<name>_col-convcolonly``, the hull of its vertices).
 
 Hierarchy (what the game uses): ``Asteroid`` -> level-1 chunks (visible, they tile the
 whole rock) -> each chunk's own sub-chunks (hidden in Blender, in place; the .glb has all
@@ -34,9 +35,10 @@ from ..generator import clear as _clear
 from ..generator.materials import MATERIAL_PREFIX
 from . import geometry as geo
 from . import params as params_mod
+from . import surface as surface_mod
 
 COLLECTION = "ShipGen_Asteroid"
-SUFFIX = "-convcol"  # Godot: mesh + convex collision shape
+COL_SUFFIX = "_col-convcolonly"  # Godot: convex collision shape (child of the chunk's mesh)
 
 # density t/m^3, hardness (mining time factor, ore = 1), grade = resource share of a rich
 # chunk's volume, cargo kind as in the ships' stats, colours (surface, plain inside, resource)
@@ -64,6 +66,7 @@ class Chunk:
     rich: bool
     children: list["Chunk"] = field(default_factory=list)
     obj: object = None
+    collider: object = None
 
 
 @dataclass
@@ -79,7 +82,7 @@ class Asteroid:
 
     @property
     def objects(self):
-        return [self.root, *(c.obj for c in self.chunks)]
+        return [self.root, *(c.obj for c in self.chunks), *(c.collider for c in self.chunks)]
 
 
 def generate(raw_params: dict) -> Asteroid:
@@ -89,13 +92,13 @@ def generate(raw_params: dict) -> Asteroid:
     warnings = list(result.warnings)
     levels = p["max_levels"]
     while True:
-        tree, fractures = _fracture(p, levels)
-        tris = sum(_tris(c.points) for c in _walk(tree))
+        tree, fractures, surf = _fracture(p, levels)
+        rock = _build_objects(p, tree, fractures, surf)
+        tris = sum(len(poly.vertices) - 2 for c in rock.chunks for poly in c.obj.data.polygons)
         if tris <= p["max_tris"] or levels == 1:
             break
         levels -= 1
         warnings.append(f"max_levels reduced to {levels} to stay within max_tris ({tris} tris)")
-    rock = _build_objects(p, tree, fractures)
     rock.warnings = warnings
     return rock
 
@@ -129,10 +132,11 @@ def _base_pieces(p, rng) -> list[list[Vector]]:
     return [[(rot @ q) * scale for q in piece] for piece in pieces]
 
 
-def _fracture(p, levels: int) -> tuple[list[Chunk], list[tuple[Vector, float]]]:
-    """Chunk tree + every fracture plane (break faces lie on one of them)."""
+def _fracture(p, levels: int):
+    """Chunk tree, every fracture plane (break faces lie on one of them) and the rock surface."""
     rng = random.Random(f"{p['seed']}:{p['composition']}:asteroid")
     pieces = _base_pieces(p, rng)
+    surf = surface_mod.make_surface(p, pieces, random.Random(f"{p['seed']}:{p['composition']}:surface"))
     fractures: list[tuple[Vector, float]] = []
     total = sum(geo.volume(pc) for pc in pieces)
     top: list[Chunk] = []
@@ -158,20 +162,13 @@ def _fracture(p, levels: int) -> tuple[list[Chunk], list[tuple[Vector, float]]]:
 
     for chunk in top:
         split(chunk)
-    return top, fractures
+    return top, fractures, surf
 
 
 def _walk(chunks):
     for c in chunks:
         yield c
         yield from _walk(c.children)
-
-
-def _tris(points) -> int:
-    bm = geo.hull_bmesh(points)
-    n = sum(len(f.verts) - 2 for f in bm.faces)
-    bm.free()
-    return n
 
 
 # ---------------------------------------------------------------- objects and stats
@@ -200,7 +197,7 @@ def _on_fracture(n: Vector, d: float, fractures, tol: float, inset: float = 0.0)
     return False
 
 
-def _build_objects(p, tree: list[Chunk], fractures) -> Asteroid:
+def _build_objects(p, tree: list[Chunk], fractures, surf) -> Asteroid:
     _clear(COLLECTION)
     coll = bpy.data.collections.new(COLLECTION)
     bpy.context.scene.collection.children.link(coll)
@@ -222,15 +219,20 @@ def _build_objects(p, tree: list[Chunk], fractures) -> Asteroid:
             if _on_fracture(n, d, fractures, tol):
                 pts = geo.clip(pts, n, d - inset)
         bm = geo.hull_bmesh(pts)
+        layer = bm.faces.layers.int.new(surface_mod.FRACTURE_LAYER)
         rng = random.Random(f"{p['seed']}:vein:{chunk.name}")
         for f in bm.faces:
             if _on_fracture(f.normal, f.normal.dot(f.calc_center_median()), fractures, tol, inset):
+                f[layer] = 1
                 f.material_index = 2 if chunk.rich else 1
             else:
                 f.material_index = 2 if chunk.rich and rng.random() < VEIN_SHARE else 0
+        if p["roughness"] > 0 or p["craters"]:
+            surface_mod.roughen(bm, surf, 0.18 * geo.diameter(pts))
         c = geo.centroid([v.co for v in bm.verts])
         for v in bm.verts:
             v.co -= c
+        collider = _collider(chunk.name, [v.co for v in bm.verts], coll)
         mesh = bpy.data.meshes.new(chunk.name)
         bm.to_mesh(mesh)
         bm.free()
@@ -238,13 +240,15 @@ def _build_objects(p, tree: list[Chunk], fractures) -> Asteroid:
             mesh.materials.append(mats[key])
         for poly in mesh.polygons:
             poly.use_smooth = False
-        obj = bpy.data.objects.new(chunk.name + SUFFIX, mesh)
+        obj = bpy.data.objects.new(chunk.name, mesh)
         coll.objects.link(obj)
         obj.parent = parent
         obj.location = c - parent_c
+        collider.parent = obj
         hidden = chunk.level > 1
         obj.hide_viewport = obj.hide_render = hidden
-        chunk.obj = obj
+        collider.hide_viewport = hidden
+        chunk.obj, chunk.collider = obj, collider
         obj["asteroid_chunk"] = _chunk_stats(chunk, mesh, comp, p)
         for child in chunk.children:
             make(child, obj, c)
@@ -256,6 +260,20 @@ def _build_objects(p, tree: list[Chunk], fractures) -> Asteroid:
     root["shipgen_asteroid"] = {"seed": p["seed"], "composition": p["composition"], "shape": p["shape"],
                                 "stats": rock.stats}
     return rock
+
+
+def _collider(name: str, points, coll):
+    """Convex hull of the chunk's (displaced) vertices, as a Godot collision-only node."""
+    bm = geo.exact_hull_bmesh(points)
+    mesh = bpy.data.meshes.new(name + "_col")
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = bpy.data.objects.new(name + COL_SUFFIX, mesh)
+    obj.display_type = "WIRE"
+    obj.hide_render = True
+    obj["shipgen_role"] = "collision"
+    coll.objects.link(obj)
+    return obj
 
 
 def _chunk_stats(chunk: Chunk, mesh, comp: dict, p) -> dict:
