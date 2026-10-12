@@ -195,6 +195,36 @@ class KitShipTest(unittest.TestCase):
         small = dict(self.base, hull=dict(self.base["hull"], length=14))
         self.assertEqual(windows(self.kit.build(small, plan="mono")), 0)
 
+    def test_hull_detail(self):
+        """kit.detail: grooves / side panels / trench by class; looks only, nothing sits in them."""
+        hauler = dict(params.load(os.path.join(ROOT, "presets", "hauler_m.json")).params, spread=0)
+
+        def hull_tris(ship):
+            hull = next(o for o in ship.parts if o["shipgen_role"] == "hull")
+            return sum(len(poly.vertices) - 2 for poly in hull.data.polygons)
+
+        for seed in range(1, 5):
+            with self.subTest(seed=seed):
+                p = dict(hauler, seed=seed)
+                plain = self.kit.build(p, detail=0.0)
+                plain_tris = hull_tris(plain)  # the next build replaces this ship's objects
+                ship = self.kit.build(p)
+                self.assertEqual(plain.design.label(), ship.design.label())
+                self.assertGreater(hull_tris(ship), plain_tris)
+                for key, value in plain.gameplay.items():  # hull stats come from the reference hull
+                    if isinstance(value, float):
+                        self.assertAlmostEqual(value, ship.gameplay[key], delta=0.01 * abs(value) + 0.01, msg=key)
+                self.assertEqual(plain.gameplay["cargo"], ship.gameplay["cargo"])
+                cuts = [b for b in ship.obstacles if b.what in ("groove", "trench")]
+                self.assertTrue(any(b.what == "groove" for b in cuts))
+                for inst in ship.instances:
+                    if inst.kind == "greeble" and inst.live:
+                        self.assertFalse(any(inst.box().overlaps(b) for b in cuts), "greeble over a groove/trench")
+                    if inst.kind == "module" and inst.live and inst.sk.kind == "top":
+                        trench = [b for b in cuts if b.what == "trench"]
+                        self.assertFalse(any(inst.box().overlaps(b) for b in trench), "roof module over the trench")
+                self.check_ship(ship)
+
     def test_no_engines_is_not_a_fit_issue(self):
         ship = self.kit.build(dict(self.base, engines=dict(self.base["engines"], count=0)))
         self.assertEqual(ship.warnings, [])

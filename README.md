@@ -107,6 +107,7 @@ Schlüssel werden repariert und als Warnung gemeldet (mit `--strict` als Fehler)
 | `style.palette`, `.wear` | Farbschema, Abnutzung |
 | `kit.plan`, `.tail`, `.mid`, `.nose` | Bausteine festlegen (`auto` = Seed) |
 | `kit.engine_design`, `.rig_design`, `.module_design` | Design 0–9 festlegen (`-1` = Seed) |
+| `kit.detail` | Rumpfdetails 0–1: Rillen (alle Klassen), erhabene Seitenpaneele (Frachter, Miner, Korvette), Dachgraben (Frachter, Korvette); 0 = glatter Rumpf. Reine Optik |
 | `spread` | Fertigungsstreuung pro Exemplar (Standard 0.025 ≈ ±10 % auf die Werte, 0 = exakt) |
 | `max_tris` | Dreiecksbudget; notfalls fallen Module/Greebles weg (mit Warnung) |
 | `builder` | `kit` (Standard) oder `classic` (alter Generator, nur zum Vergleich) |

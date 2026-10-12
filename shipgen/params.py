@@ -96,6 +96,8 @@ SCHEMA: dict[str, Any] = {
         "engine_design": Field(int, -1, -1, KIT_DESIGNS - 1, description="-1 = seed picks"),
         "rig_design": Field(int, -1, -1, KIT_DESIGNS - 1, description="-1 = seed picks within mining.type"),
         "module_design": Field(int, -1, -1, KIT_DESIGNS - 1, description="-1 = seed picks within cargo.type"),
+        "detail": Field(float, 1.0, 0.0, 1.0,
+                        description="Hull surface detail (belt grooves, side panels, dorsal trench by class); 0 = plain"),
     },
     "spread": Field(float, 0.025, 0.0, 0.25,
                     description="Per-seed manufacturing spread (±) of proportions and part sizes; 0 = exact model"),

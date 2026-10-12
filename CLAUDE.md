@@ -13,6 +13,11 @@ the extension panel (`shipgen/ui.py`), the headless CLI (`cli.py`) and, later, t
 
 - **Low poly, sharp edges.** Flat shading only, no smoothing, no subdivision. Hull sections
   have 10 vertices; a typical ship is 200–600 tris.
+- **Surface detail stays in the hull's own geometry** (`kit/hull_detail.py`): grooves, raised
+  flank panels, a dorsal trench - never on the roof where modules and greebles sit. Each lofted
+  body is detailed alone (booleans need one clean shell); a twin's second body is the first
+  mirrored. Greebles treat grooves/trench as obstacles; colliders use the plain loft, grown by
+  the panel height over the mid section.
 - **Distinct top-view silhouettes per class.** Fighter/interceptor = dart or needle with wings,
   freighter = brick of stepped modules, corvette = long hull, shuttle = stubby van.
   `Ship.stats()["top_view"]` measures it (`fill` = silhouette area / bounding rectangle);
@@ -78,9 +83,12 @@ same class, mining and cargo type share the seed streams).
 - `shipgen/stats.py` – gameplay stats from geometry (see above).
 - `shipgen/kit/` – the default builder: `hull_kit.py` (sections with a standard joint, body plans
   mono/twin/fork, class kits), `engine_designs.py` / `rig_designs.py` / `module_designs.py`
-  (10 each, unit size), `greeble_designs.py` (6, look only), `__init__.py` (`build` ->
-  `_build_hull` (bodies, add-ons incl. the command bridge, sockets) -> `_place_parts` ->
-  collision check + resolver -> triangle budget -> greebles -> role objects, sockets as empties),
+  (10 each, unit size), `greeble_designs.py` (6, look only), `hull_detail.py` (surface detail by
+  class, `kit.detail`: belt grooves as extra loft stations, raised side panels via bmesh inset,
+  dorsal trench via Boolean modifier - MANIFOLD solver, EXACT on Blender < 4.5), `__init__.py`
+  (`build` -> `_build_hull` (bodies, add-ons incl. the command bridge, sockets) -> `_place_parts`
+  -> collision check + resolver -> `_finish_bodies` (trench where no roof module sits, join the
+  detailed bodies) -> triangle budget -> greebles -> role objects, sockets as empties),
   `collision.py` (convex `-convcolonly`
   shapes for Godot), `normalize.py` (stat normalisation). Concept: `docs/parts_kit.md`.
   Every new part design must honour the unit contract in its module docstring
@@ -138,6 +146,8 @@ python3 scripts/stats_table.py /tmp/l/*.json
 .venv/bin/python scripts/kit_conflicts.py
 .venv/bin/python scripts/kit_calibrate.py
 .venv/bin/python scripts/kit_demo.py [--only parts,ships,matrix,colliders]
+# hull detail before/after sheets (docs/hull_detail/)
+.venv/bin/python scripts/hull_detail_demo.py
 # installable extension zip -> dist/
 python3 scripts/build_extension.py
 ```

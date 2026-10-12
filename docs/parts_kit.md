@@ -106,6 +106,10 @@ RigidBody3D/CharacterBody3D hängen (oder im Import-Skript umhängen).
   Deckshaus mit erhöhter Brücke und leuchtendem Fensterband (wie ein Frachtschiff). Es gehört
   zum Rumpf, ist reine Optik (Rumpfwerte kommen vom Referenzrumpf) und endet vor der Mitte,
   wo die Dachmodule sitzen.
+- **Rumpfdetails** (`kit/hull_detail.py`, `kit.detail` 0–1, je Klasse): Rillen ringsum
+  (zusätzliche Querschnitte im Loft, alle Klassen), erhabene Paneele nur an den Flanken (Frachter,
+  Miner, Korvette; das Dach ist mit Modulen und Greebles schon voll), Dachgraben per
+  Boolean-Modifier (Frachter, Korvette) nur auf Dachabschnitten ohne Module. Reine Optik.
 - **Greebles** (`kit/greeble_designs.py`, 6 Designs: Lüftung, Antenne, Schüssel, Platte,
   Leitungen, Licht): freie Dach-/Seitenplätze, gespiegelt, `greeble_density` steuert die Menge,
   der Seed wählt 3 Designs als Stil des Schiffs. Sie werden nur platziert, wo sie nichts

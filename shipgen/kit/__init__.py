@@ -154,15 +154,15 @@ FIT_ISSUE = "fit: "  # warnings that mean the hull could not carry the loadout a
 
 
 def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_design=None, rig_design=None,
-          module_design=None, resolve: bool = True, detail: tuple = ()) -> KitShip:
+          module_design=None, resolve: bool = True, detail: float | None = None) -> KitShip:
     """Build a kit ship.
 
     Hull blocks and part designs default to the seed's pick within the class kit (explicit
     arguments, then ``params["kit"]``, win). The seed tries hull designs in its own order and
     keeps the first that carries the whole loadout (part sizes come from the model params, not
     from the hull), so the seed changes the look but not the stats. ``resolve=False`` keeps
-    colliding parts (to inspect conflicts). ``detail``: hull surface details (prototype,
-    see hull_detail.DETAILS).
+    colliding parts (to inspect conflicts). ``detail`` overrides ``kit.detail`` (hull surface
+    detail 0..1, see hull_detail).
     """
     p = params_mod.individualize(params_mod.validate(raw_params).params)
     kp = p["kit"]  # explicit arguments win over the params; "auto" / -1 = the seed picks
@@ -170,6 +170,7 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
     tail = tail or (None if kp["tail"] == "auto" else kp["tail"])
     mid = mid or (None if kp["mid"] == "auto" else kp["mid"])
     nose = nose or (None if kp["nose"] == "auto" else kp["nose"])
+    detail = kp["detail"] if detail is None else detail
     engine_design = engine_design if engine_design is not None else (kp["engine_design"] if kp["engine_design"] >= 0 else None)
     rig_design = rig_design if rig_design is not None else (kp["rig_design"] if kp["rig_design"] >= 0 else None)
     module_design = module_design if module_design is not None else (kp["module_design"] if kp["module_design"] >= 0 else None)
@@ -215,8 +216,9 @@ class _Frame:
     chamfer: float
     ridge: float
     module: float  # module socket size
-    detail: tuple = ()
-    detail_rng: random.Random | None = None
+    detail: frozenset = frozenset()  # hull_detail features of this build
+    detail_amount: float = 0.0
+    detail_salt: str = ""
 
 
 @dataclass
@@ -227,9 +229,10 @@ class _Hull:
     col_extras: list[list] = field(default_factory=list)  # add-ons and pylons, one convex shape each
     pylon_verts: list = field(default_factory=list)  # pylons belong to the engines role
     warnings: list[str] = field(default_factory=list)
+    body_bms: list = field(default_factory=list)  # detailed bodies, joined into the hull after the parts
 
 
-def _build_once(p, cls, stream, design, engine_design, rig_design, module_design, resolve, detail=()) -> KitShip:
+def _build_once(p, cls, stream, design, engine_design, rig_design, module_design, resolve, detail=0.0) -> KitShip:
     clear(COLLECTION)
     coll = bpy.data.collections.new(COLLECTION)
     bpy.context.scene.collection.children.link(coll)
@@ -252,7 +255,8 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
     fr = _Frame(length, beam, beam * vol_scale, height * vol_scale,
                 chamfer=min(max(1.0 - hp["squareness"], 0.0), 1.0), ridge=RIDGE[cls],
                 module=0.6 * beam * (0.7 + 0.6 * p["cargo"]["size"]),
-                detail=tuple(detail), detail_rng=random.Random(f"{stream}:detail"))
+                detail=frozenset(hull_detail.details_for(cls, detail, p["max_tris"])), detail_amount=detail,
+                detail_salt=f"{stream}:detail")
 
     hull_bm = bmesh.new()
     parts_bm = bmesh.new()  # engines, pylons, rigs, modules (material 0 accent, 1 glow, 2 cargo)
@@ -265,6 +269,7 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
     if resolve:
         for group in resolve_conflicts(parts_bm, instances, hull.obstacles):
             warnings.append(f"{FIT_ISSUE}{group} dropped: collided with another part")
+    _finish_bodies(hull_bm, hull, fr, instances)
 
     # triangle budget: drop module pairs (last placed first) until the ship fits
     def tris(bm):
@@ -282,7 +287,11 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
 
     _add_greebles(p, stream, parts_bm, instances, hull.obstacles, hull.bodies, fr, hull_bm, tris)
 
-    col_pieces = [seg for b in hull.bodies
+    # plain loft segments cover grooves and the trench (they only take material away); raised
+    # side panels stand out of the loft, so the mid section is grown by the panel height there
+    col_bodies = [hull_detail.inflated(b, fr.length, 1.6 * hull_detail.PANEL_HEIGHT * fr.beam) if "panels" in fr.detail
+                  else b for b in hull.bodies]
+    col_pieces = [seg for b in col_bodies
                   for seg in collision.merge(collision.body_segments(b, length, fr.chamfer, fr.ridge))]
     col_pieces += hull.col_extras
     for inst in instances:
@@ -352,9 +361,10 @@ def _build_hull(p, cls, design: Design, fr: _Frame, hull_bm, parts_bm) -> _Hull:
         for s in (1, -1):
             lay = layout_body(design, length, sub_beam, body_height, p["seed"])
             lay.x_offset = s * (sub_beam + 0.5 * gap)
-            _loft_detailed(hull_bm, lay, fr)
             bodies.append(lay)
         h = _Hull(bodies)
+        for lay in bodies:
+            _loft_detailed(hull_bm, h, lay, fr)
         for lay in bodies:
             h.obstacles += body_boxes(lay, {"rig"})
         lay = bodies[0]
@@ -373,8 +383,8 @@ def _build_hull(p, cls, design: Design, fr: _Frame, hull_bm, parts_bm) -> _Hull:
         h.sockets.append(Socket("nose", Vector((0, lay.y_mid[1], 0.0)), Vector((0, 1, 0)), 0.45 * gap))
     else:
         lay = layout_body(design, length, fr.body_beam, body_height, p["seed"])
-        _loft_detailed(hull_bm, lay, fr)
         h = _Hull([lay])
+        _loft_detailed(hull_bm, h, lay, fr)
         mount_engines(h, n_eng, lay)
         front = lay.stations[-1]
         if design.mid == "sponson":
@@ -424,27 +434,68 @@ def _build_hull(p, cls, design: Design, fr: _Frame, hull_bm, parts_bm) -> _Hull:
     return h
 
 
-def _loft_detailed(hull_bm, lay: HullLayout, fr: _Frame) -> None:
-    """Loft one body into ``hull_bm`` with the asked surface details (prototype). Each body is
-    detailed on its own, before add-ons join the hull mesh (booleans need one clean shell);
-    sockets keep using the plain layout."""
+def _loft_detailed(hull_bm, h: _Hull, lay: HullLayout, fr: _Frame) -> None:
+    """Loft one body, with grooves and side panels if this build has them. A detailed body
+    stays a separate mesh (``h.body_bms``) until ``_finish_bodies``: the trench boolean needs
+    one clean shell and has to know where the roof modules went. Sockets keep the plain layout."""
     if not fr.detail:
         loft_body(hull_bm, lay, fr.length, fr.chamfer, fr.ridge)
         return
     body = bmesh.new()
-    loft = hull_detail.grooved(lay, fr.length, fr.detail_rng) if "grooves" in fr.detail else lay
+    loft = lay
+    if "grooves" in fr.detail:
+        loft, grooves = hull_detail.grooved(lay, fr.length, fr.detail_salt)
+        for y0, y1 in grooves:  # greebles keep out of grooves
+            st = section_at(lay, 0.5 * (y0 + y1), fr.length)
+            h.obstacles.append(Box("groove", Vector((lay.x_offset - st.half_width, y0, -st.bottom)),
+                                   Vector((lay.x_offset + st.half_width, y1, st.top)), set()))
+    if h.body_bms:  # second twin body: mirrored from the first in _finish_bodies (exact symmetry)
+        h.body_bms.append(None)
+        body.free()
+        return
     loft_body(body, loft, fr.length, fr.chamfer, fr.ridge)
-    if "panels_raised" in fr.detail or "panels_recessed" in fr.detail:
-        hull_detail.panels(body, lay.y_mid, fr.length, fr.beam, fr.detail_rng, raised="panels_raised" in fr.detail)
-    cuts = hull_detail.BOOLEAN & set(fr.detail)
-    if cuts:
-        hull_detail.boolean_difference(body, hull_detail.cutters(cuts, lay, fr.length, fr.body_beam,
-                                                                  fr.body_height, fr.detail_rng))
-    mesh = bpy.data.meshes.new("_detail_body")
-    body.to_mesh(mesh)
-    body.free()
-    hull_bm.from_mesh(mesh)
-    bpy.data.meshes.remove(mesh)
+    if "panels" in fr.detail:
+        hull_detail.panels(body, lay.y_mid, fr.length, fr.beam, fr.detail_salt,
+                           share=hull_detail.PANEL_SHARE * fr.detail_amount)
+    h.body_bms.append(body)
+
+
+def _finish_bodies(hull_bm, h: _Hull, fr: _Frame, instances) -> None:
+    """Cut the trench into the detailed bodies where no roof module sits, then join them into
+    the hull mesh. The trench becomes an obstacle for greebles (they would float over it).
+    A twin's second body is the first one mirrored, so the two match exactly."""
+    if not h.body_bms:
+        return
+    lay, body = h.bodies[0], h.body_bms[0]
+    trench = []
+    if "trench" in fr.detail:
+        occupied = []
+        for inst in instances:
+            if inst.kind == "module" and inst.live and inst.sk.kind == "top":
+                if abs(inst.sk.pos.x - lay.x_offset) < section_at(lay, inst.sk.pos.y, fr.length).half_width:
+                    ys = [c.y for c in inst.coords()]
+                    occupied.append((min(ys), max(ys)))
+        cutter, boxes = hull_detail.trench_cutter(lay, fr.length, fr.body_height,
+                                                  hull_detail.trench_stretches(lay, fr.length, occupied))
+        hull_detail.boolean_difference(body, cutter)
+        trench = [Box("trench", lo, hi, set()) for lo, hi in boxes]
+    bodies = [body]
+    if len(h.body_bms) == 2:
+        twin = body.copy()
+        for v in twin.verts:
+            v.co.x = -v.co.x
+        bmesh.ops.reverse_faces(twin, faces=twin.faces[:])
+        bodies.append(twin)
+        trench += [Box(b.what, Vector((-b.hi.x, b.lo.y, b.lo.z)), Vector((-b.lo.x, b.hi.y, b.hi.z)), set())
+                   for b in trench]
+    h.obstacles += trench
+    for bm in bodies:
+        mesh = bpy.data.meshes.new("_detail_body")
+        bm.to_mesh(mesh)
+        bm.free()
+        hull_bm.from_mesh(mesh)
+        bpy.data.meshes.remove(mesh)
+    h.body_bms = []
 
 
 BRIDGE_CLASSES = {"freighter", "miner"}

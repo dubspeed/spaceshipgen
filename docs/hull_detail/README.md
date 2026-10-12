@@ -1,26 +1,17 @@
-# Rumpf-Details – Prototyp
+# Rumpfdetails
 
-Erzeugt mit `scripts/hull_detail_demo.py`; Code in `shipgen/kit/hull_detail.py`, aktiviert über
-`kit.build(params, detail=(...))` (noch kein Parameter). Pro Bild: oben `plain`, `grooves`,
-`panels_raised`; unten `panels_recessed`, `bool_cuts` (Graben, Kerben, Einlässe), `combined`.
+Vorher/nachher je Modell (Zeilen = Seeds 1–3, links `kit.detail = 0`, rechts `1`), erzeugt mit
+`scripts/hull_detail_demo.py`. Code: `shipgen/kit/hull_detail.py`.
 
-| Technik | Wie | Kosten | Eindruck |
-|---|---|---|---|
-| `grooves` | Rillen ringsum: zusätzliche Querschnitte im Loft (eingezogen auf 90 %) | +80–240 Tris, kein Mesh-Eingriff | sauber, ruhig, gliedert lange Rümpfe |
-| `panels_raised` / `_recessed` | Rumpf in Felder geschnitten (`bisect_plane`), ein Teil der Seiten-/Dachflächen eingerückt und gehoben/versenkt | +150–300 Tris | Panzerplatten-Look; erhaben und versenkt wirken fast gleich |
-| `trench` (Bool) | Dachgraben über die Mitte | alle drei Schnitte zusammen +~120 Tris | stärkster Effekt, sehr „Sci-Fi“ |
-| `notches`, `intakes` (Bool) | Kerben in den Bugschultern, Einlässe in den Heckflanken | gering | Kerben wirken teils wie Schaden |
+| Detail | Klassen | Wie |
+|---|---|---|
+| Rillen | alle | zusätzliche, auf 90 % eingezogene Querschnitte im Loft der Mittelsektion |
+| Seitenpaneele | Frachter, Miner, Korvette | Flanken in kurze Felder geschnitten (max. 5 % der Länge bzw. 1,2 × Halbbreite), ein Teil eingerückt und angehoben – nur Seiten, nicht das Dach |
+| Dachgraben | Frachter, Korvette | Boolean-Modifier (Solver `MANIFOLD`, auf Blender < 4.5 `EXACT`), nur auf Dachabschnitten ohne Module |
 
-Bool: Blender-Modifier ohne `bpy.ops`, Solver `MANIFOLD` (ab 4.5), sonst `EXACT`. Jeder
-Rumpfkörper wird einzeln bearbeitet, bevor Kästen, Zinken und Brücke dazukommen (mit
-überlappenden Schalen liefert der Solver das Mesh unverändert zurück).
-
-Prüfung: alle 240 Rumpfkombinationen × 2 Detail-Sätze → geschlossene Meshes, keine
-Null-Flächen, < 1 s pro Schiff. Werte unverändert (Rumpfwerte kommen vom Referenzrumpf).
-
-## Offen, bevor es in den Standard-Builder kann
-
-- Greebles wissen nichts von Graben/Vertiefungen und schweben dann darüber.
-- Erhabene Paneele ragen etwas aus den Collision-Shapes (Test „jeder Vertex in einer Shape“).
-- Auswahl per Klasse/Seed und ein Parameter (`hull.detail` 0–1?) fehlen noch.
-- Classic-Builder bleibt außen vor.
+- Reine Optik: Rumpfwerte kommen vom Referenzrumpf.
+- Greebles meiden Rillen und Graben. Die Collider sind der glatte Loft, im Mittelteil um die
+  Paneelhöhe vergrößert.
+- Jeder Rumpfkörper wird einzeln bearbeitet. Bei Twin-Rümpfen ist der zweite Körper der erste,
+  gespiegelt, damit beide exakt symmetrisch sind.
+- Knappe Dreiecksbudgets lassen Details weg (`MIN_TRIS`).
