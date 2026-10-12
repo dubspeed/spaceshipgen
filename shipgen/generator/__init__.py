@@ -92,6 +92,12 @@ def generate(raw_params: dict, collection_name: str = COLLECTION_NAME) -> Ship:
     Any previous ship in that collection is replaced.
     """
     result = params_mod.validate(raw_params)
+    if result.params["builder"] == "kit":
+        from .. import kit
+
+        ship = kit.build(result.params)
+        ship.warnings[:0] = result.warnings
+        return ship
     p = params_mod.individualize(result.params)
 
     clear(collection_name)

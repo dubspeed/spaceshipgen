@@ -112,6 +112,20 @@ class IndividualizeTest(unittest.TestCase):
 
 
 class SchemaTest(unittest.TestCase):
+    def test_kit_choices_match_the_kit(self):
+        try:
+            import bpy  # noqa: F401
+        except ImportError:
+            self.skipTest("requires Blender (bpy)")
+        from shipgen.kit import engine_designs, hull_kit, module_designs, rig_designs
+
+        self.assertEqual(params.KIT_PLANS[1:], hull_kit.PLANS)
+        self.assertEqual(params.KIT_TAILS[1:], tuple(hull_kit.TAILS))
+        self.assertEqual(params.KIT_MIDS[1:], tuple(hull_kit.MIDS))
+        self.assertEqual(params.KIT_NOSES[1:], tuple(hull_kit.NOSES))
+        for lib in (engine_designs, rig_designs, module_designs):
+            self.assertEqual(len(lib.DESIGNS), params.KIT_DESIGNS)
+
     def test_json_schema_mirrors_schema(self):
         js = params.json_schema()
         json.dumps(js)  # serialisable

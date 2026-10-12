@@ -39,8 +39,10 @@ def _measure(obj) -> dict:
     return out
 
 
-def compute(ship, hull) -> dict:
-    """``hull`` is the ship's HullShape."""
+def compute(ship, hull, efficiency: dict | None = None) -> dict:
+    """``hull`` is the ship's HullShape (or anything with ``length``, ``profile`` and ``y(t)``);
+    ``efficiency`` overrides MINING_EFFICIENCY (each part library is calibrated separately)."""
+    efficiency = MINING_EFFICIENCY if efficiency is None else efficiency
     p = ship.params
     parts = {o["shipgen_role"]: o for o in ship.parts}
     m = {role: _measure(obj) for role, obj in parts.items()}
@@ -67,7 +69,7 @@ def compute(ship, hull) -> dict:
         kind = p["mining"]["type"]
         reach = max(d["max_y"] - hull.y(1.0), 0.0)
         mining = {"type": kind}
-        mining.update(power=MINING_EFFICIENCY[kind] * d["volume"] ** (2 / 3), range_m=reach)
+        mining.update(power=efficiency[kind] * d["volume"] ** (2 / 3), range_m=reach)
         if kind == "laser":
             mining["range_m"] = 20.0 * reach  # beam range scales with the emitter boom
         elif kind == "claw":

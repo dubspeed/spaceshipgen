@@ -28,5 +28,6 @@
     "palette": "navy",
     "wear": 0.3
   },
-  "max_tris": 30000
+  "max_tris": 30000,
+  "builder": "classic"
 }

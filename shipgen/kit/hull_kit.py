@@ -105,6 +105,29 @@ class Design:
             d.nose = "blunt"  # the prongs need a flat front face between them
         return d
 
+    @classmethod
+    def candidates(cls, cls_name: str, seed, **overrides) -> list["Design"]:
+        """All designs the class kit allows (respecting overrides), the seed's pick first."""
+        import itertools
+
+        kit = CLASS_KIT[cls_name]
+        first = cls.pick(cls_name, seed, **overrides)
+        fixed = {k: v for k, v in overrides.items() if v is not None}
+        combos = [
+            cls(*c) for c in itertools.product(kit["plans"], kit["tails"], kit["mids"], kit["noses"])
+            if all(getattr(cls(*c), k) == v for k, v in fixed.items())
+        ]
+        for d in combos:
+            if d.plan == "fork":
+                d.nose = "blunt"
+        random.Random(f"{seed}:candidates").shuffle(combos)
+        out, seen = [first], {first.label()}
+        for d in combos:
+            if d.label() not in seen:
+                seen.add(d.label())
+                out.append(d)
+        return out
+
     def label(self) -> str:
         return f"{self.plan}/{self.tail}/{self.mid}/{self.nose}"
 

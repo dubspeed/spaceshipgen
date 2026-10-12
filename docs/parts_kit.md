@@ -93,6 +93,23 @@ Hinweis für Godot: `-convcolonly`-Nodes werden beim Import zu StaticBody3D mit
 CollisionShape3D; für ein bewegtes Schiff die CollisionShape3D-Kinder unter den eigenen
 RigidBody3D/CharacterBody3D hängen (oder im Import-Skript umhängen).
 
+## 5. Werte: der Seed ändert die Optik, nicht die Werte
+
+Der Seed wählt Bauplan und Teile-Designs – das darf die Werte eines Modells nicht verschieben
+(gemessen vorher: Beschleunigung ×7, Abbauleistung ×13 zwischen Seeds eines Modells).
+
+- **Teilegrößen aus dem Modell**, nicht aus dem Sockel. Der Seed probiert Rumpfdesigns in
+  seiner Reihenfolge und nimmt das erste, das das ganze Loadout trägt (großer Bohrer → keine
+  Gabel). Warnungen mit `fit:` heißen: kein Rumpf trug es vollständig.
+- **Rumpfwerte aus dem Referenzrumpf** des Modells (mono/flat/straight/blunt, gleiche Maße):
+  Masse, Laderaum, Hülle. Der gewählte Bauplan ist reine Optik.
+- **Design-Normierung:** jedes Triebwerks-, Rig- und Moduldesign auf den Mittelwert seiner Art
+  (`kit/normalize.py`, gemessen an den Einheitsdesigns).
+- Übrig bleibt die Fertigungsstreuung (`spread` 0.025 → etwa ±10 %).
+
+Ergebnis (8 Seeds je Modell): Design allein < 8 %, mit Streuung ±6–15 % je Wert.
+Abbau-Kalibrierung: mittleres Rig = 100 je Art (`scripts/kit_calibrate.py`).
+
 ## Prototyp-Umfang
 
 - `shipgen/kit/`: Sektionen + Baupläne + Sockel, 10 Triebwerks-Designs, Container an
@@ -100,4 +117,5 @@ RigidBody3D/CharacterBody3D hängen (oder im Import-Skript umhängen).
 - `scripts/kit_demo.py`: rendert (a) die 10 Triebwerke, (b) Draufsicht-Silhouetten vieler
   Rumpfkombinationen, (c) Matrix Triebwerke × Hecks.
 - `tests/test_kit.py`: die Passprüfungen aus Regel 4.
-- Der bestehende Generator bleibt unverändert; Integration erst nach Entscheidung.
+- Seit Schritt 5: der Baukasten ist der Standard-Generator (`builder: kit`); Kampfschiffe
+  nutzen bis zu Flügeln im Baukasten noch `builder: classic`.

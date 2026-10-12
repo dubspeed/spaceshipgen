@@ -29,6 +29,7 @@ def random_params(seed: int) -> dict:
         p["hull"][key] = rng.uniform(spec.min, spec.max)
     p["hull"]["length"] = length = rng.uniform(4, 120)
     p["hull"]["segments"] = rng.randint(3, 16)
+    p["builder"] = "classic"
     p["wings"] = {
         "type": rng.choice(params.WING_TYPES),
         "count": rng.randint(0, 6),
@@ -43,9 +44,15 @@ def random_params(seed: int) -> dict:
 
 
 def silhouette_params(cls: str, seed: int) -> dict:
+    """Preset params for the classic generator (these tests cover it; kit tests are in test_kit)."""
     p = params.load(os.path.join(ROOT, "presets", f"{cls}.json")).params
     p["seed"] = seed
+    p["builder"] = "classic"
     return p
+
+
+def classic_defaults() -> dict:
+    return dict(params.defaults(), builder="classic")
 
 
 @unittest.skipIf(bpy is None, "requires Blender (bpy)")
@@ -102,27 +109,27 @@ class GeneratorTest(unittest.TestCase):
         self.assertEqual(a, b)
 
     def test_different_seed_different_ship(self):
-        p = params.defaults()
+        p = classic_defaults()
         a = self.hull_coords(self.generator.generate(dict(p, seed=1)))
         b = self.hull_coords(self.generator.generate(dict(p, seed=2)))
         self.assertNotEqual(a, b)
 
     def test_regenerate_replaces_previous_ship(self):
         for seed in (1, 2, 3):
-            self.generator.generate(dict(params.defaults(), seed=seed))
+            self.generator.generate(dict(classic_defaults(), seed=seed))
         names = sorted(o.name for o in bpy.data.collections["ShipGen"].objects)
         self.assertEqual(names, ["Ship", "Ship_Engines", "Ship_Hull", "Ship_Wings"])
         self.assertEqual(sorted(o.name for o in bpy.data.objects if o.name.startswith("Ship_")), names[1:])
         self.assertEqual(sorted(m.name for m in bpy.data.meshes), names[1:])
 
     def test_accepts_raw_params(self):
-        ship = self.generator.generate({"hull": {"length": 1e6}, "class": "nope", "spread": 0})
+        ship = self.generator.generate({"hull": {"length": 1e6}, "class": "nope", "spread": 0, "builder": "classic"})
         self.assertEqual(ship.params["hull"]["length"], 200.0)
         self.assertEqual(len(ship.warnings), 2)
 
 
     def test_no_wings_no_engines(self):
-        p = dict(params.defaults(), wings={"type": "none", "count": 2, "span": 9, "sweep_deg": 0})
+        p = dict(classic_defaults(), wings={"type": "none", "count": 2, "span": 9, "sweep_deg": 0})
         p["engines"] = dict(p["engines"], count=0)
         ship = self.generator.generate(p)
         self.assertEqual([o.name for o in ship.parts], ["Ship_Hull"])
@@ -233,7 +240,7 @@ class GeneratorTest(unittest.TestCase):
 
     def test_low_budget_stays_within_max_tris(self):
         for cls in params.SHIP_CLASSES:
-            p = dict(params.defaults(), max_tris=500)
+            p = dict(classic_defaults(), max_tris=500)
             p["class"] = cls
             p["hull"] = dict(p["hull"], segments=16)
             p["engines"] = dict(p["engines"], count=8)

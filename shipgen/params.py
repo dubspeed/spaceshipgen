@@ -22,6 +22,13 @@ SHIP_CLASSES = ("fighter", "interceptor", "freighter", "miner", "corvette", "shu
 WING_TYPES = ("none", "delta", "swept", "straight", "forward_swept")
 MINING_TYPES = ("none", "drill", "laser", "claw", "scoop")
 CARGO_TYPES = ("none", "containers", "hoppers", "tanks", "habitat")
+BUILDERS = ("kit", "classic")
+# Kit building blocks (must match shipgen/kit; test_params checks it). "auto" = the seed picks.
+KIT_PLANS = ("auto", "mono", "twin", "fork")
+KIT_TAILS = ("auto", "flat", "taper", "flare", "outboard")
+KIT_MIDS = ("auto", "straight", "waist", "bulge", "stepped", "sponson")
+KIT_NOSES = ("auto", "wedge", "blunt", "hammer", "cockpit")
+KIT_DESIGNS = 10  # designs per part library (engines, rigs, modules)
 PALETTES = ("industrial_yellow", "military_grey", "white_red", "desert", "navy", "black_gold", "rust")
 
 _HEX_COLOR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
@@ -79,7 +86,18 @@ SCHEMA: dict[str, Any] = {
         "palette": Field(str, "military_grey", choices=PALETTES),
         "wear": Field(float, 0.3, 0.0, 1.0),
     },
-    "spread": Field(float, 0.04, 0.0, 0.25,
+    "builder": Field(str, "kit", choices=BUILDERS,
+                     description="kit = hull from sections + parts on sockets; classic = old generator (wings)"),
+    "kit": {
+        "plan": Field(str, "auto", choices=KIT_PLANS, description="Body plan: mono, twin (catamaran), fork"),
+        "tail": Field(str, "auto", choices=KIT_TAILS),
+        "mid": Field(str, "auto", choices=KIT_MIDS),
+        "nose": Field(str, "auto", choices=KIT_NOSES),
+        "engine_design": Field(int, -1, -1, KIT_DESIGNS - 1, description="-1 = seed picks"),
+        "rig_design": Field(int, -1, -1, KIT_DESIGNS - 1, description="-1 = seed picks within mining.type"),
+        "module_design": Field(int, -1, -1, KIT_DESIGNS - 1, description="-1 = seed picks within cargo.type"),
+    },
+    "spread": Field(float, 0.025, 0.0, 0.25,
                     description="Per-seed manufacturing spread (±) of proportions and part sizes; 0 = exact model"),
     "max_tris": Field(int, 15000, 500, 500000, description="Triangle budget for the whole ship"),
 }

@@ -29,8 +29,8 @@
   },
   "cargo": {
     "type": "containers",
-    "modules": 16,
-    "size": 0.5
+    "modules": 12,
+    "size": 0.6
   },
   "greeble_density": 0.4,
   "symmetry": true,

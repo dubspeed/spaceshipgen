@@ -145,6 +145,110 @@ class KitShipTest(unittest.TestCase):
 
 
 @unittest.skipIf(bpy is None, "requires Blender (bpy)")
+class KitStatsTest(unittest.TestCase):
+    """The seed changes the look, not the stats: a model's ships stay comparable in the shop."""
+
+    KEYS = ("mass_t", "acceleration_ms2", "hull_hp")
+
+    @classmethod
+    def setUpClass(cls):
+        from shipgen import generator
+
+        cls.generator = generator
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+
+    def model(self, name, **changes):
+        return dict(params.load(os.path.join(ROOT, "presets", f"{name}.json")).params, **changes)
+
+    def values(self, g):
+        cargo = max(g["cargo"]["general_m3"], g["cargo"]["ore_m3"], g["cargo"]["fluid_m3"], g["cargo"]["passengers"])
+        return {**{k: g[k] for k in self.KEYS}, "cargo": cargo, "mining": g["mining"]["power"]}
+
+    def spread_of(self, name, seeds, **changes):
+        rows = [self.values(self.generator.generate(self.model(name, seed=s, **changes)).gameplay) for s in seeds]
+        out = {}
+        for key in rows[0]:
+            vals = [r[key] for r in rows]
+            mean = sum(vals) / len(vals)
+            out[key] = 0.0 if mean == 0 else max(abs(v / mean - 1) for v in vals)
+        return out
+
+    def test_design_choice_hardly_moves_stats(self):
+        for name in ("miner_m", "hauler_m", "tanker_m"):
+            for key, dev in self.spread_of(name, range(1, 9), spread=0).items():
+                with self.subTest(model=name, stat=key):
+                    self.assertLess(dev, 0.08, f"{name} {key} varies {dev:.0%} with the design alone")
+
+    def test_manufacturing_spread_stays_slight(self):
+        for name in ("miner_m", "hauler_m"):
+            for key, dev in self.spread_of(name, range(1, 9)).items():
+                with self.subTest(model=name, stat=key):
+                    self.assertLess(dev, 0.2, f"{name} {key} varies {dev:.0%}")
+
+    def test_models_keep_their_order(self):
+        """Bigger models stay bigger, whatever the seed."""
+        for small, big, key in (("miner_s", "miner_m", "mining"), ("miner_m", "miner_l", "mining"),
+                                ("hauler_s", "hauler_m", "cargo"), ("hauler_m", "hauler_l", "cargo")):
+            for seed in range(1, 5):
+                a = self.values(self.generator.generate(self.model(small, seed=seed)).gameplay)[key]
+                b = self.values(self.generator.generate(self.model(big, seed=seed)).gameplay)[key]
+                with self.subTest(small=small, big=big, seed=seed):
+                    self.assertLess(a, b)
+
+    def test_mining_calibration(self):
+        from shipgen import kit
+        from shipgen.kit import rig_designs
+
+        for kind in ("drill", "laser", "claw", "scoop"):
+            powers = []
+            for design in rig_designs.designs_of(kind):
+                p = self.model("miner_m", spread=0, mining={"type": kind, "count": 2, "size": 0.5})
+                ship = kit.build(p, plan="mono", tail="flat", mid="straight", nose="blunt", rig_design=design)
+                powers.append(ship.gameplay["mining"]["power"])
+            with self.subTest(kind=kind, powers=powers):
+                self.assertAlmostEqual(sum(powers) / len(powers), 100, delta=10)
+                self.assertLess(max(powers) / min(powers), 1.05, "designs of one kind should mine alike")
+
+    def test_params_kit_choices_are_used(self):
+        p = self.model("hauler_m", kit={"plan": "twin", "tail": "flare", "mid": "straight", "nose": "blunt",
+                                        "engine_design": 3, "rig_design": -1, "module_design": 1})
+        ship = self.generator.generate(p)
+        self.assertEqual(ship.design.label(), "twin/flare/straight/blunt")
+        self.assertEqual(ship.loadout["engine"], "block")
+        self.assertEqual(ship.loadout["module"], "ribbed_container")
+
+    def test_fixed_design_of_the_wrong_kind_is_ignored(self):
+        p = self.model("miner_m", kit=dict(params.defaults()["kit"], rig_design=1))  # 1 = a drill, model mines by laser
+        ship = self.generator.generate(p)
+        self.assertTrue(ship.loadout["rig"].startswith("laser"), ship.loadout)
+        self.assertTrue(any("not a laser rig" in w for w in ship.warnings), ship.warnings)
+
+    def test_triangle_budget(self):
+        p = self.model("hauler_m", max_tris=1200, cargo={"type": "tanks", "modules": 12, "size": 0.8})
+        ship = self.generator.generate(p)
+        self.assertLessEqual(ship.stats()["tris"], 1200)
+        self.assertTrue(any("max_tris" in w for w in ship.warnings), ship.warnings)
+
+    def test_stats_reach_the_glb(self):
+        import json
+        import struct
+        import tempfile
+
+        from shipgen import export
+
+        ship = self.generator.generate(self.model("miner_m"))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = export.export_glb(ship, os.path.join(tmp, "ship.glb"))
+            with open(path, "rb") as f:
+                f.read(12)
+                n, _ = struct.unpack("<II", f.read(8))
+                gltf = json.loads(f.read(n))
+        root = next(node for node in gltf["nodes"] if node["name"] == "Ship")
+        self.assertEqual(root["extras"]["shipgen"]["stats"], json.loads(json.dumps(ship.gameplay)))
+        self.assertGreater(root["extras"]["shipgen"]["stats"]["mining"]["power"], 0)
+
+
+@unittest.skipIf(bpy is None, "requires Blender (bpy)")
 class GodotColliderTest(unittest.TestCase):
     """Convex collision shapes: convex, gap-free cover of the visible ship, Godot naming."""
 

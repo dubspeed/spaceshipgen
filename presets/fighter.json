@@ -28,5 +28,6 @@
     "palette": "military_grey",
     "wear": 0.3
   },
-  "max_tris": 15000
+  "max_tris": 15000,
+  "builder": "classic"
 }

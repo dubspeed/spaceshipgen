@@ -17,9 +17,10 @@ import bpy
 from mathutils import Vector
 
 from .. import params as params_mod
+from .. import stats
 from ..generator import Ship, clear, materials, shapes
-from ..generator.hull import Station
-from . import collision, engine_designs, module_designs, rig_designs
+from ..generator.hull import CLASS_PROFILES, Station
+from . import collision, engine_designs, module_designs, normalize, rig_designs
 from .hull_kit import Design, HullLayout, Socket, layout_body, loft_body, section_at, RIDGE
 
 COLLECTION = "ShipGen"
@@ -45,11 +46,15 @@ class KitShip(Ship):
 
 # ---------------------------------------------------------------- hull pieces
 
-def _grab(bm, fn) -> list:
-    """Run ``fn`` and return copies of the vertex positions it added to ``bm``."""
+def _grab(bm, fn, refs: list | None = None) -> list:
+    """Run ``fn`` and return copies of the vertex positions it added to ``bm``
+    (the vertices themselves are appended to ``refs`` if given)."""
     before = set(bm.verts)
     fn()
-    return [v.co.copy() for v in bm.verts if v not in before]
+    new = [v for v in bm.verts if v not in before]
+    if refs is not None:
+        refs.extend(new)
+    return [v.co.copy() for v in new]
 
 
 def _mini_body(bm, x, y_back, y_front, w, top, bottom, chamfer, ridge, length, pointed=True):
@@ -142,18 +147,61 @@ def _top_sockets(layout: HullLayout, length: float, module: float, chamfer: floa
 
 # ---------------------------------------------------------------- assembly
 
+MAX_CANDIDATES = 16
+FIT_ISSUE = "fit: "  # warnings that mean the hull could not carry the loadout as ordered
+
+
 def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_design=None, rig_design=None,
           module_design=None, resolve: bool = True) -> KitShip:
-    """Build a kit ship. Design choices default to the seed's pick within the class kit;
-    ``resolve=False`` keeps colliding parts (to inspect conflicts)."""
+    """Build a kit ship.
+
+    Hull blocks and part designs default to the seed's pick within the class kit (explicit
+    arguments, then ``params["kit"]``, win). The seed tries hull designs in its own order and
+    keeps the first that carries the whole loadout (part sizes come from the model params, not
+    from the hull), so the seed changes the look but not the stats. ``resolve=False`` keeps
+    colliding parts (to inspect conflicts).
+    """
     p = params_mod.individualize(params_mod.validate(raw_params).params)
+    kp = p["kit"]  # explicit arguments win over the params; "auto" / -1 = the seed picks
+    plan = plan or (None if kp["plan"] == "auto" else kp["plan"])
+    tail = tail or (None if kp["tail"] == "auto" else kp["tail"])
+    mid = mid or (None if kp["mid"] == "auto" else kp["mid"])
+    nose = nose or (None if kp["nose"] == "auto" else kp["nose"])
+    engine_design = engine_design if engine_design is not None else (kp["engine_design"] if kp["engine_design"] >= 0 else None)
+    rig_design = rig_design if rig_design is not None else (kp["rig_design"] if kp["rig_design"] >= 0 else None)
+    module_design = module_design if module_design is not None else (kp["module_design"] if kp["module_design"] >= 0 else None)
+    early_warnings = []
+    # a fixed design must belong to the chosen kind, or stats and looks would disagree
+    if rig_design is not None and rig_designs.KIND[rig_designs.NAMES[rig_design]] != p["mining"]["type"]:
+        early_warnings.append(f"kit.rig_design {rig_designs.NAMES[rig_design]} is not a {p['mining']['type']} rig: "
+                              "the seed picks instead")
+        rig_design = None
+    if module_design is not None and module_designs.KIND[module_designs.NAMES[module_design]] != p["cargo"]["type"]:
+        early_warnings.append(f"kit.module_design {module_designs.NAMES[module_design]} does not carry "
+                              f"{p['cargo']['type']}: the seed picks instead")
+        module_design = None
     cls = p["class"] if p["class"] in RIDGE else "freighter"
     # models of one class differ by role, so the role is part of the seed streams
     stream = f"{p['seed']}:{cls}:{p['mining']['type']}:{p['cargo']['type']}"
-    design = Design.pick(cls, stream, plan=plan, tail=tail, mid=mid, nose=nose)
     if engine_design is None:
         engine_design = random.Random(f"{stream}:engine_design").randrange(len(engine_designs.DESIGNS))
 
+    candidates = Design.candidates(cls, stream, plan=plan, tail=tail, mid=mid, nose=nose)[:MAX_CANDIDATES]
+    best = None
+    for design in candidates:
+        ship = _build_once(p, cls, stream, design, engine_design, rig_design, module_design, resolve)
+        issues = sum(w.startswith(FIT_ISSUE) for w in ship.warnings)
+        if issues == 0:
+            ship.warnings[:0] = early_warnings
+            return ship
+        if best is None or issues < best[0]:
+            best = (issues, design)
+    ship = _build_once(p, cls, stream, best[1], engine_design, rig_design, module_design, resolve)
+    ship.warnings[:0] = early_warnings
+    return ship
+
+
+def _build_once(p, cls, stream, design, engine_design, rig_design, module_design, resolve) -> KitShip:
     clear(COLLECTION)
     coll = bpy.data.collections.new(COLLECTION)
     bpy.context.scene.collection.children.link(coll)
@@ -163,10 +211,20 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
 
     hp = p["hull"]
     length = hp["length"]
-    beam = 0.5 * length * hp["width_ratio"]
+    beam = 0.5 * length * hp["width_ratio"]  # nominal: part sizes are derived from this
     height = beam * hp["height_ratio"]
     chamfer = min(max(1.0 - hp["squareness"], 0.0), 1.0)
     ridge = RIDGE[cls]
+    # Same hull volume for every body plan of a model: scale the cross-section of the chosen
+    # design to the reference design's (mono / flat / straight / blunt).
+    reference = layout_body(Design("mono", "flat", "straight", "blunt"), length, beam, height, p["seed"])
+    if design.plan == "twin":
+        dry = [layout_body(design, length, 0.5 * beam, height, p["seed"])] * 2
+    else:
+        dry = [layout_body(design, length, beam, height, p["seed"])]
+    vol_scale = math.sqrt(normalize.cross_section_integral([reference], length)
+                          / normalize.cross_section_integral(dry, length))
+    body_beam, body_height = beam * vol_scale, height * vol_scale
 
     hull_bm = bmesh.new()
     parts_bm = bmesh.new()  # engines, pylons, rigs, modules (material 0 accent, 1 glow, 2 cargo)
@@ -175,6 +233,7 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
     obstacles: list[Box] = []  # hull add-ons parts must not cut into
     col_bodies: list[HullLayout] = []  # lofted bodies, cut into convex segments for collision
     col_extras: list[list] = []  # point sets of hull add-ons and pylons (one convex shape each)
+    pylon_verts: list = []  # pylons belong to the engines role
     n_eng, r_req = p["engines"]["count"], 0.5 * p["engines"]["size"]
     module = 0.6 * beam * (0.7 + 0.6 * p["cargo"]["size"])
 
@@ -186,11 +245,11 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
                                  Vector((lay.x_offset + w, y1, max(a.top, b.top))), applies_to))
 
     if design.plan == "twin":
-        sub_beam = 0.5 * beam
+        sub_beam = 0.5 * body_beam
         gap = 0.9 * sub_beam
         bodies = []
         for s in (1, -1):
-            lay = layout_body(design, length, sub_beam, height, p["seed"])
+            lay = layout_body(design, length, sub_beam, body_height, p["seed"])
             lay.x_offset = s * (sub_beam + 0.5 * gap)
             loft_body(hull_bm, lay, length, chamfer, ridge)
             add_body_boxes(lay, {"rig"})
@@ -199,38 +258,40 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
         lay = bodies[0]
         for f in (0.25, 0.75):  # bridges between the hulls
             y = lay.y_mid[0] + f * (lay.y_mid[1] - lay.y_mid[0])
-            size = Vector((2 * (sub_beam + 0.5 * gap), 0.1 * length, 0.35 * height))
-            centre = Vector((0, y, 0.15 * height))
+            size = Vector((2 * (sub_beam + 0.5 * gap), 0.1 * length, 0.35 * body_height))
+            centre = Vector((0, y, 0.15 * body_height))
             col_extras.append(_grab(hull_bm, lambda c=centre, sz=size: shapes.box(hull_bm, c, sz)))
             obstacles.append(Box("bridge", centre - size / 2, centre + size / 2, {"rig", "module", "engine"}))
         for b in bodies:
             sk, py, r = _engine_sockets(n_eng // 2, r_req, b.x_offset, b.y_tail, b.stations[0],
                                         design.tail == "outboard")
+            if sk and r < r_req * 0.99:
+                warnings.append(f"{FIT_ISSUE}engines.size capped to {2 * r:.2f} to fit the tail")
             sockets += sk
             for a, c, rr in py:
-                col_extras.append(_grab(parts_bm, lambda a=a, c=c, rr=rr: shapes.beam(parts_bm, a, c, 0.5 * rr, 0.25 * rr, 0)))
+                col_extras.append(_grab(parts_bm, lambda a=a, c=c, rr=rr: shapes.beam(parts_bm, a, c, 0.5 * rr, 0.25 * rr, 0), pylon_verts))
             sockets += _side_sockets(b, length, module, b.x_offset, outer_only_sign=1 if b.x_offset > 0 else -1)
             sockets += _top_sockets(b, length, module, chamfer, ridge, single=True)
         if n_eng % 2:
-            warnings.append("twin hulls need an even engine count; one engine dropped")
+            warnings.append(f"{FIT_ISSUE}twin hulls need an even engine count; one engine dropped")
         sockets.append(Socket("nose", Vector((0, lay.y_mid[1], 0.0)), Vector((0, 1, 0)), 0.45 * gap))
     else:
-        lay = layout_body(design, length, beam, height, p["seed"])
+        lay = layout_body(design, length, body_beam, body_height, p["seed"])
         loft_body(hull_bm, lay, length, chamfer, ridge)
         col_bodies.append(lay)
         tail_face = lay.stations[0]
         sk, py, r = _engine_sockets(n_eng, r_req, 0.0, lay.y_tail, tail_face, design.tail == "outboard")
         if r < r_req * 0.99:
-            warnings.append(f"engines.size capped to {2 * r:.2f} to fit the tail")
+            warnings.append(f"{FIT_ISSUE}engines.size capped to {2 * r:.2f} to fit the tail")
         sockets += sk
         for a, c, rr in py:
-            col_extras.append(_grab(parts_bm, lambda a=a, c=c, rr=rr: shapes.beam(parts_bm, a, c, 0.5 * rr, 0.25 * rr, 0)))
+            col_extras.append(_grab(parts_bm, lambda a=a, c=c, rr=rr: shapes.beam(parts_bm, a, c, 0.5 * rr, 0.25 * rr, 0), pylon_verts))
         front = lay.stations[-1]
         if design.mid == "sponson":
-            pw = 0.32 * beam
+            pw = 0.32 * body_beam
             y_a, y_b = lay.y_mid
             pod_a, pod_b = y_a + 0.05 * length, y_b - 0.02 * length
-            pod_top, pod_bottom = 0.5 * height * 0.55, 0.5 * height * 0.45
+            pod_top, pod_bottom = 0.5 * body_height * 0.55, 0.5 * body_height * 0.45
             for s in (1, -1):
                 x = s * (section_at(lay, 0.5 * (y_a + y_b), length).half_width + 0.5 * pw)
                 col_extras.append(_grab(hull_bm, lambda x=x: _mini_body(
@@ -262,8 +323,7 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
             inner = front.half_width - 1.6 * pw  # inner face of the prongs
             sockets.append(Socket("nose", Vector((0, lay.y_front, 0)), Vector((0, 1, 0)), 0.9 * inner))
         elif not lay.point_nose:
-            sockets.append(Socket("nose", Vector((0, lay.y_front, 0)), Vector((0, 1, 0)),
-                                  min(front.half_width, front.top + front.bottom)))
+            sockets.append(Socket("nose", Vector((0, lay.y_front, 0)), Vector((0, 1, 0)), 0.95 * front.half_width))
 
     for i, sk in enumerate(sockets):
         sk.name = f"Socket_{sk.kind}_{i}"
@@ -289,10 +349,13 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
     if rig_design is not None and mining_kind != "none":
         if nose_sockets:
             sk = nose_sockets[0]
-            radius = sk.radius * (0.6 + 0.4 * p["mining"]["size"])
+            radius = beam * (0.3 + 0.4 * p["mining"]["size"])  # from the model, not the socket
+            if radius > sk.radius:
+                warnings.append(f"{FIT_ISSUE}mining rig shrunk to fit the nose ({sk.radius:.2f} < {radius:.2f})")
+                radius = sk.radius
             place("rig", "rig", lambda: rig_designs.build(parts_bm, rig_design, sk.pos, sk.normal, radius), sk)
         else:
-            warnings.append("mining rig dropped: this nose has no mount face")
+            warnings.append(f"{FIT_ISSUE}mining rig dropped: this nose has no mount face")
 
     cargo_kind = p["cargo"]["type"]
     if module_design is None and cargo_kind != "none":
@@ -312,20 +375,50 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
                                                                                     sk.normal, sk.radius), sk)
         placed += 2
     if placed < wanted:
-        warnings.append(f"cargo.modules: placed {placed} of {wanted} (pairs only, limited by side and roof sockets)")
+        warnings.append(f"{FIT_ISSUE}cargo.modules: placed {placed} of {wanted} (pairs only, limited by side and roof sockets)")
 
     conflicts = find_conflicts(instances, obstacles)
     if resolve:
         dropped = resolve_conflicts(parts_bm, instances, obstacles)
         for group in dropped:
-            warnings.append(f"{group} dropped: collided with another part")
+            warnings.append(f"{FIT_ISSUE}{group} dropped: collided with another part")
+
+    # triangle budget: drop module pairs (last placed first) until the ship fits
+    def tris(bm):
+        return sum(len(f.verts) - 2 for f in bm.faces)
+
+    module_groups = sorted({i.group for i in instances if i.kind == "module" and i.verts},
+                           key=lambda g: int(g.split("_")[1]))
+    while module_groups and tris(hull_bm) + tris(parts_bm) > p["max_tris"]:
+        group = module_groups.pop()
+        doomed = [i for i in instances if i.group == group]
+        bmesh.ops.delete(parts_bm, geom=[v for i in doomed for v in i.verts], context="VERTS")
+        for i in doomed:
+            i.verts = []
+        warnings.append(f"{FIT_ISSUE}{group} dropped to stay within max_tris")
 
     col_pieces = [seg for b in col_bodies for seg in collision.merge(collision.body_segments(b, length, chamfer, ridge))]
     col_pieces += col_extras
     col_pieces += [[v.co.copy() for v in i.verts] for i in instances if i.verts and i.verts[0].is_valid]
 
+    role_of = {"engine": "engines", "rig": "mining", "module": "cargo"}
+    parts_bm.verts.index_update()
+    role_verts: dict[str, set] = {"engines": {v.index for v in pylon_verts if v.is_valid}}
+    for inst in instances:
+        if inst.verts and inst.verts[0].is_valid:
+            role_verts.setdefault(role_of[inst.kind], set()).update(v.index for v in inst.verts)
+    pieces = [("Ship_Hull", "hull", hull_bm, ("hull",))]
+    for role, idx in role_verts.items():
+        if not idx:
+            continue
+        bm = parts_bm.copy()
+        bm.verts.ensure_lookup_table()
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.index not in idx], context="VERTS")
+        pieces.append((f"Ship_{role.capitalize()}", role, bm, ("accent", "glow", "cargo")))
+    parts_bm.free()
+
     parts = []
-    for name, bm, mat_keys in (("Ship_Hull", hull_bm, ("hull",)), ("Ship_Parts", parts_bm, ("accent", "glow", "cargo"))):
+    for name, role, bm, mat_keys in pieces:
         if not bm.faces:
             bm.free()
             continue
@@ -340,7 +433,7 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
         obj = bpy.data.objects.new(name, mesh)
         coll.objects.link(obj)
         obj.parent = root
-        obj["shipgen_role"] = name.removeprefix("Ship_").lower()
+        obj["shipgen_role"] = role
         parts.append(obj)
 
     colliders = collision.build_colliders(col_pieces, coll, root)
@@ -365,10 +458,73 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
         "rig": fitted("rig", rig_designs.NAMES, rig_design),
         "module": fitted("module", module_designs.NAMES, module_design),
     }
-    root["shipgen"] = {"seed": p["seed"], "class": p["class"], "design": design.label(), **loadout}
-    return KitShip(root=root, parts=parts, params=p, warnings=warnings, design=design, sockets=sockets,
+    ship = KitShip(root=root, parts=parts, params=p, warnings=warnings, design=design, sockets=sockets,
                    socket_objects=socket_objects, colliders=colliders, engine_design=engine_design, loadout=loadout,
                    conflicts=conflicts, instances=instances, obstacles=obstacles)
+    nose_y = nose_sockets[0].pos.y if nose_sockets else 0.5 * length
+    ref_bm = bmesh.new()  # the model's reference hull: hull stats come from it, the design is looks
+    loft_body(ref_bm, reference, length, chamfer, ridge)
+    reference_hull = {"volume": abs(ref_bm.calc_volume()), "area": sum(f.calc_area() for f in ref_bm.faces)}
+    ref_bm.free()
+    ship.gameplay = _normalized_stats(ship, _StatsHull(length, CLASS_PROFILES[cls], nose_y), engine_design,
+                                      rig_design, module_design, reference_hull)
+    root["shipgen"] = {"seed": p["seed"], "class": p["class"], "design": design.label(), **loadout,
+                       "stats": ship.gameplay}
+    return ship
+
+
+def _normalized_stats(ship, hull, engine_design, rig_design, module_design, reference_hull) -> dict:
+    """stats.compute, made independent of the seed's design choices:
+
+    - hull mass, internal hold and hull HP come from the model's reference hull;
+    - each part design is scaled to the mean of its kind (normalize.py).
+    Parts still count with their real geometry (size, count), so the model params decide.
+    """
+    g = stats.compute(ship, hull, KIT_MINING_EFFICIENCY)
+    actual_hull = stats._measure(next(o for o in ship.parts if o["shipgen_role"] == "hull"))
+    profile = hull.profile
+
+    mass = g["mass_t"] + stats.DENSITY["hull"] * (reference_hull["volume"] - actual_hull["volume"])
+    thrust = g["thrust_kn"] * normalize.engine_factors()[engine_design]
+    g["mass_t"] = round(mass, 2)
+    g["thrust_kn"] = round(thrust, 2)
+    g["acceleration_ms2"] = round(thrust / mass, 2) if mass else 0.0
+    g["turn_rate_deg_s2"] = round(math.degrees(0.1 * 6.0 * thrust / (mass * hull.length)), 2) if mass else 0.0
+    g["hull_hp"] = round(reference_hull["area"] * stats.HULL_HP_PER_M2 * profile.armor)
+
+    cargo = {"general_m3": 0.0, "ore_m3": 0.0, "fluid_m3": 0.0, "passengers": 0}
+    cargo[profile.hold_kind] += reference_hull["volume"] * profile.hold
+    cargo_obj = next((o for o in ship.parts if o["shipgen_role"] == "cargo"), None)
+    if cargo_obj is not None and ship.loadout["module"] != "none":
+        usable = stats._measure(cargo_obj)["volume"] * stats.USABLE_MODULE_VOLUME
+        usable *= normalize.module_factors()[module_design]
+        kind = ship.params["cargo"]["type"]
+        if kind == "habitat":
+            cargo["passengers"] = int(usable // stats.M3_PER_PASSENGER)
+        else:
+            cargo[stats.CARGO_KIND[kind]] += usable
+    g["cargo"] = {k: (round(v, 2) if isinstance(v, float) else v) for k, v in cargo.items()}
+
+    if ship.loadout["rig"] != "none":
+        g["mining"]["power"] = round(g["mining"]["power"] * normalize.rig_factors()[rig_design], 2)
+    return g
+
+
+@dataclass
+class _StatsHull:
+    """What stats.compute needs to know about the hull; mining reach counts from the nose mount."""
+
+    length: float
+    profile: object
+    nose_y: float
+
+    def y(self, t: float) -> float:
+        return self.nose_y if t >= 1.0 else (t - 0.5) * self.length
+
+
+# Mining power per rig kind for the kit's rig library: efficiency x rig volume^(2/3),
+# calibrated (scripts/kit_calibrate.py) so a medium rig (size 0.5 on miner_m) averages ~100.
+KIT_MINING_EFFICIENCY = {"drill": 11.833, "laser": 15.317, "claw": 19.635, "scoop": 17.67}
 
 
 # ---------------------------------------------------------------- collisions
