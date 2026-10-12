@@ -154,9 +154,10 @@ direkt importieren. Sie enthält:
 
 ## Asteroiden (Prototyp)
 
-Asteroiden aus Erz, Metall oder Eis, vorgebrochen in konvexe Brocken bis zu einer
-Mindestgröße – jeder Brocken ist in Godot direkt seine eigene Collision-Shape, Werte (Masse,
-Ertrag, Härte) kommen wie bei den Schiffen aus der Geometrie.
+Asteroiden aus Erz, Metall oder Eis, vorgebrochen in Brocken bis zu einer Mindestgröße – jeder
+Brocken hat in Godot seine eigene konvexe Collision-Shape, Werte (Masse, Ertrag, Härte) kommen
+wie bei den Schiffen aus der Geometrie. In Blender: Seitenleiste **ShipGen** → Bereich
+**Asteroids** (mit **Show Level**, um die vorgebrochenen Ebenen anzusehen).
 
 ```bash
 .venv/bin/python cli.py --asteroid ore_m

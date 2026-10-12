@@ -3,6 +3,10 @@
 Code: `shipgen/asteroids/` (Generator, Schema, konvexe Geometrie), Presets: `presets/asteroids/`,
 Bilder: `scripts/asteroid_demo.py`.
 
+In Blender: Seitenleiste (N) → **ShipGen** → Bereich **Asteroids** (Generate, Random Seed,
+Load Parameters, Copy Parameters, Export .glb). Nach dem Generieren zeigt der Bereich die Werte
+und mit **Show Level** die vorgebrochenen Ebenen im Viewport.
+
 ```bash
 .venv/bin/python cli.py --asteroid ore_m                 # output/ore_m_12{.glb,.blend,.png,.json}
 .venv/bin/python cli.py --asteroid all --no-blend --views three_quarter
@@ -62,7 +66,6 @@ Taube Brocken liefern 5 %. Idee für das Spiel: Abbauzeit ≈ Härte × Ertrag �
 
 ## Offen
 
-- Panel in Blender (bisher nur Kommandozeile/Python).
 - Gase (Gaswolken/Kometen) später.
 - Unterbrocken weichen bei sehr kleinen Brocken bis ~8 % im Volumen vom Elternbrocken ab (die
   Verschiebung ist pro Brocken begrenzt, damit dünne Brocken nicht umklappen).

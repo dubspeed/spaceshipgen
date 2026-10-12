@@ -104,8 +104,9 @@ same class, mining and cargo type share the seed streams).
   ore/metal/ice constants). Presets in `presets/asteroids/`.
 - `shipgen/metrics.py` – top-view silhouette metrics (numpy rasteriser).
 - `shipgen/export.py` – `.glb`, `.blend`, Cycles previews (`three_quarter` and orthographic `top`).
-- `shipgen/ui.py` – sidebar panel "ShipGen"; properties generated from the schema
-  (nested keys flattened as `hull__length`).
+- `shipgen/ui.py` – sidebar tab "ShipGen": ship panel + "Asteroids" panel (`ASTEROID_GROUPS`,
+  `show_level` toggles the break levels in the viewport); properties generated from the schemas
+  (nested keys flattened as `hull__length`); `tests/test_ui.py` runs the operators headless.
 - `cli.py`, `presets/*.json` (one per class), `tests/`, `scripts/`.
 
 ## Conventions
