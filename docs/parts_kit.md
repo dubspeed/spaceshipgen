@@ -1,4 +1,4 @@
-# Bauteil-Baukasten – Konzept (Prototyp)
+# Bauteil-Baukasten – Konzept
 
 Zwei Probleme:
 
@@ -14,7 +14,7 @@ Bausteine + genormte Schnittstellen**, Zufall nur bei der *Auswahl*, nicht bei d
 
 Ein Rumpf = **Bauplan** + **Sektionen**:
 
-| Baustein | Varianten (Prototyp) | Wirkung auf die Draufsicht |
+| Baustein | Varianten | Wirkung auf die Draufsicht |
 |---|---|---|
 | Bauplan | `mono`, `twin` (Katamaran), `fork` (Gabelbug) | Grundtopologie: Pfeil, „II“, „U“ |
 | Heck | `flat`, `taper`, `flare`, `outboard` | Breites Triebwerksheck, spitz, Ausleger |
@@ -27,7 +27,9 @@ Ein Rumpf = **Bauplan** + **Sektionen**:
   (Breite = 1, Höhe = 1 relativ zum Rumpfmaß). Deshalb passt jedes Heck an jede Mitte an
   jeden Bug – wie Lego.
 - Die Klasse legt fest, **welche** Bausteine erlaubt sind (Miner: `blunt/hammer/fork`,
-  Jäger: `wedge/cockpit` …); der Seed wählt daraus. Die ±4 % Streuung bleibt obendrauf.
+  Jäger: `wedge/cockpit` …); der Seed wählt daraus, feste Bausteine (`kit.*`) gewinnen.
+  Eine Gabel bekommt immer den stumpfen Bug; ist ein anderer Bug fest gewählt, fällt die
+  Gabel aus der Auswahl.
 - 3 Baupläne × 4 Hecks × 5 Mitten × 4 Bugs = 240 Grundformen statt 6.
 
 ## 2. Anbauteile an Sockeln (Hardpoints)
@@ -120,12 +122,14 @@ Der Seed wählt Bauplan und Teile-Designs – das darf die Werte eines Modells n
 Ergebnis (8 Seeds je Modell): Design allein < 8 %, mit Streuung ±6–15 % je Wert.
 Abbau-Kalibrierung: mittleres Rig = 100 je Art (`scripts/kit_calibrate.py`).
 
-## Prototyp-Umfang
+## Code
 
-- `shipgen/kit/`: Sektionen + Baupläne + Sockel, 10 Triebwerks-Designs, Container an
-  Seitensockeln, Sockel als Empties.
-- `scripts/kit_demo.py`: rendert (a) die 10 Triebwerke, (b) Draufsicht-Silhouetten vieler
-  Rumpfkombinationen, (c) Matrix Triebwerke × Hecks.
-- `tests/test_kit.py`: die Passprüfungen aus Regel 4.
+- `shipgen/kit/hull_kit.py`: Sektionen, Baupläne, Klassen-Baukästen, Kandidatenreihenfolge.
+- `shipgen/kit/__init__.py`: `build` → `_build_hull` (Körper, Anbauten, Sockel) →
+  `_place_parts` → Kollisionsauflösung → Dreiecksbudget → Greebles → Objekte, Sockel, Collider, Werte.
+- `shipgen/kit/*_designs.py`: Teile-Bibliotheken (Einheitsvertrag im Modul-Docstring).
+- `scripts/kit_demo.py`: Sheets der Teile, Rumpf-Silhouetten und Matrix Triebwerke × Hecks
+  (`docs/kit/`); `scripts/kit_conflicts.py`: Kollisions-Stresstest; `scripts/kit_calibrate.py`.
+- `tests/test_kit.py`: die Passprüfungen aus Regel 4, Werte-Stabilität, Collider.
 - Der Baukasten ist der Standard-Generator (`builder: kit`) für alle Presets, inklusive
   Kampfschiffe (Flügel an Sockeln); `classic` bleibt nur zum Vergleich.

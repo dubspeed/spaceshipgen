@@ -10,6 +10,7 @@ Coordinates as in the main generator: nose +Y, up +Z, centred on the origin.
 
 from __future__ import annotations
 
+import itertools
 import random
 from dataclasses import dataclass, field
 
@@ -17,7 +18,6 @@ import bmesh
 from mathutils import Vector
 
 from ..generator.hull import Station, cross_section
-from ..generator import shapes
 
 E = 0.02  # length of a hard step (in u)
 
@@ -95,38 +95,45 @@ class Design:
 
     @classmethod
     def pick(cls, cls_name: str, seed, **overrides) -> "Design":
-        kit = CLASS_KIT[cls_name]
-        rng = random.Random(f"{seed}:design")
-        d = cls(rng.choice(kit["plans"]), rng.choice(kit["tails"]), rng.choice(kit["mids"]), rng.choice(kit["noses"]))
-        for key, value in overrides.items():
-            if value is not None:
-                setattr(d, key, value)
-        if d.plan == "fork":
-            d.nose = "blunt"  # the prongs need a flat front face between them
-        return d
+        """The seed's design within the class kit; overrides (not None) win."""
+        return cls.candidates(cls_name, seed, **overrides)[0]
 
     @classmethod
     def candidates(cls, cls_name: str, seed, **overrides) -> list["Design"]:
-        """All designs the class kit allows (respecting overrides), the seed's pick first."""
-        import itertools
+        """All designs the class kit allows (respecting overrides), the seed's pick first.
 
+        A fork always gets the blunt nose (its prongs need the flat face between them), so a
+        fixed non-blunt nose excludes the fork unless the plan is fixed to fork as well.
+        """
         kit = CLASS_KIT[cls_name]
-        first = cls.pick(cls_name, seed, **overrides)
         fixed = {k: v for k, v in overrides.items() if v is not None}
-        combos = [
-            cls(*c) for c in itertools.product(kit["plans"], kit["tails"], kit["mids"], kit["noses"])
-            if all(getattr(cls(*c), k) == v for k, v in fixed.items())
-        ]
-        for d in combos:
-            if d.plan == "fork":
-                d.nose = "blunt"
+        if fixed.get("plan") == "fork":
+            fixed.pop("nose", None)
+
+        def allowed(d: "Design") -> bool:
+            return all(getattr(d, k) == v for k, v in fixed.items())
+
+        def pool(key):
+            return (fixed[key],) if key in fixed else kit[key + "s"]
+
+        rng = random.Random(f"{seed}:design")
+        first = cls(*(fixed.get(k, rng.choice(kit[k + "s"])) for k in ("plan", "tail", "mid", "nose")))
+        first._with_fork_rule()
+        if not allowed(first):  # the seed rolled a fork, but the nose is fixed
+            first.plan = rng.choice([pl for pl in pool("plan") if pl != "fork"])
+        combos = [cls(*c)._with_fork_rule() for c in itertools.product(*(pool(k) for k in ("plan", "tail", "mid", "nose")))]
         random.Random(f"{seed}:candidates").shuffle(combos)
-        out, seen = [first], {first.label()}
-        for d in combos:
-            if d.label() not in seen:
+        out, seen = [], set()
+        for d in [first, *combos]:
+            if allowed(d) and d.label() not in seen:
                 seen.add(d.label())
                 out.append(d)
         return out
+
+    def _with_fork_rule(self) -> "Design":
+        if self.plan == "fork":
+            self.nose = "blunt"
+        return self
 
     def label(self) -> str:
         return f"{self.plan}/{self.tail}/{self.mid}/{self.nose}"

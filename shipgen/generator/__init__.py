@@ -152,8 +152,6 @@ def generate(raw_params: dict, collection_name: str = COLLECTION_NAME) -> Ship:
             cargo_obj.data.materials.append(mats[key])
         parts.append(cargo_obj)
 
-    # TODO: greebles
-
     for obj in parts:
         if "shipgen_role" not in obj:
             obj["shipgen_role"] = obj.name.removeprefix("Ship_").lower()

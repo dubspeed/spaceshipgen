@@ -24,7 +24,8 @@ MINING_EFFICIENCY = {"drill": 5.1, "laser": 27.6, "claw": 18.8, "scoop": 6.25}
 CARGO_KIND = {"containers": "general_m3", "hoppers": "ore_m3", "tanks": "fluid_m3"}
 
 
-def _measure(obj) -> dict:
+def measure(obj) -> dict:
+    """Volume, area, glowing area and extent of one part object."""
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     glow_slots = {i for i, m in enumerate(obj.data.materials) if m is not None and m.name.startswith("ShipGen_Glow")}
@@ -45,7 +46,7 @@ def compute(ship, hull, efficiency: dict | None = None) -> dict:
     efficiency = MINING_EFFICIENCY if efficiency is None else efficiency
     p = ship.params
     parts = {o["shipgen_role"]: o for o in ship.parts}
-    m = {role: _measure(obj) for role, obj in parts.items()}
+    m = {role: measure(obj) for role, obj in parts.items()}
 
     mass = sum(DENSITY.get(role, 0.2) * d["volume"] for role, d in m.items())
     thrust = m["engines"]["glow_area"] * THRUST_PER_NOZZLE_M2 if "engines" in m else 0.0

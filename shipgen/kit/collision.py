@@ -62,8 +62,9 @@ def merge(pieces: list[list[Vector]], tolerance: float = MERGE_TOLERANCE) -> lis
         v = hull_volume(piece)
         if out:
             joined = out[-1] + piece
-            if hull_volume(joined) <= (vols[-1] + v) * (1.0 + tolerance):
-                out[-1], vols[-1] = joined, hull_volume(joined)
+            joined_vol = hull_volume(joined)
+            if joined_vol <= (vols[-1] + v) * (1.0 + tolerance):
+                out[-1], vols[-1] = joined, joined_vol
                 continue
         out.append(list(piece))
         vols.append(v)

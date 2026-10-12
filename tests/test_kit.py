@@ -1,4 +1,4 @@
-"""Fit checks for the parts-kit prototype: every part fits every hull."""
+"""Fit checks for the parts kit: every part fits every hull."""
 
 import itertools
 import os
@@ -103,6 +103,16 @@ class KitShipTest(unittest.TestCase):
             self.assertIn(plan, kit["plans"])
             self.assertIn(tail, kit["tails"])
 
+    def test_fixed_blocks_are_respected(self):
+        """A fixed nose excludes the fork (which needs a blunt nose) instead of being overridden."""
+        from shipgen.kit import hull_kit as hk
+
+        for seed in range(30):
+            for d in hk.Design.candidates("miner", seed, nose="hammer"):
+                self.assertEqual(d.nose, "hammer", d.label())
+            self.assertEqual(hk.Design.pick("miner", seed, plan="fork", nose="hammer").label()[:4], "fork")
+            self.assertEqual(hk.Design.pick("miner", seed, tail="flare").tail, "flare")
+
     def test_rigs_and_modules_fit_every_hull_without_collisions(self):
         """Stress loadout on every hull: nothing may collide, nothing may be dropped (regression:
         the fork socket used to be wider than the gap between its prongs)."""
@@ -120,6 +130,22 @@ class KitShipTest(unittest.TestCase):
                 pointed = plan == "mono" and hk.NOSES[nose].keys[-1][1] == 0  # no mount face: no rig
                 self.assertEqual(ship.loadout["rig"] == "none", pointed, ship.warnings)
                 self.check_ship(ship)
+
+    def test_conflicts_are_checked_on_the_finished_ship(self):
+        """find_conflicts_after must still see the parts after the build (not an empty check)."""
+        from mathutils import Vector
+
+        ship = self.kit.build(self.base)
+        self.assertEqual(self.kit.find_conflicts_after(ship), [])
+        self.assertTrue(any(i.live for i in ship.instances))
+        everything = self.kit.Box("test", Vector((-1e3,) * 3), Vector((1e3,) * 3), {"engine"})
+        ship.obstacles.append(everything)
+        self.assertIn(("engine", "test"), self.kit.find_conflicts_after(ship))
+
+    def test_no_engines_is_not_a_fit_issue(self):
+        ship = self.kit.build(dict(self.base, engines=dict(self.base["engines"], count=0)))
+        self.assertEqual(ship.warnings, [])
+        self.assertEqual(ship.loadout["engine"], "none")
 
     def test_wings_on_every_mono_hull(self):
         """X-wings + fin + side modules on every mono hull: closed, symmetric, nothing left colliding."""
