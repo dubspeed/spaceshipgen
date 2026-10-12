@@ -22,7 +22,7 @@ from .. import params as params_mod
 from .. import stats
 from ..generator import Ship, clear, materials, shapes, wings
 from ..generator.hull import CLASS_PROFILES, Station
-from . import collision, engine_designs, greeble_designs, module_designs, normalize, rig_designs
+from . import collision, engine_designs, greeble_designs, hull_detail, module_designs, normalize, rig_designs
 from .hull_kit import Design, HullLayout, Socket, layout_body, loft_body, section_at, RIDGE
 
 COLLECTION = "ShipGen"
@@ -154,14 +154,15 @@ FIT_ISSUE = "fit: "  # warnings that mean the hull could not carry the loadout a
 
 
 def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_design=None, rig_design=None,
-          module_design=None, resolve: bool = True) -> KitShip:
+          module_design=None, resolve: bool = True, detail: tuple = ()) -> KitShip:
     """Build a kit ship.
 
     Hull blocks and part designs default to the seed's pick within the class kit (explicit
     arguments, then ``params["kit"]``, win). The seed tries hull designs in its own order and
     keeps the first that carries the whole loadout (part sizes come from the model params, not
     from the hull), so the seed changes the look but not the stats. ``resolve=False`` keeps
-    colliding parts (to inspect conflicts).
+    colliding parts (to inspect conflicts). ``detail``: hull surface details (prototype,
+    see hull_detail.DETAILS).
     """
     p = params_mod.individualize(params_mod.validate(raw_params).params)
     kp = p["kit"]  # explicit arguments win over the params; "auto" / -1 = the seed picks
@@ -191,14 +192,14 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
     candidates = Design.candidates(cls, stream, plan=plan, tail=tail, mid=mid, nose=nose)[:MAX_CANDIDATES]
     best = None
     for design in candidates:
-        ship = _build_once(p, cls, stream, design, engine_design, rig_design, module_design, resolve)
+        ship = _build_once(p, cls, stream, design, engine_design, rig_design, module_design, resolve, detail)
         issues = sum(w.startswith(FIT_ISSUE) for w in ship.warnings)
         if issues == 0:
             ship.warnings[:0] = early_warnings
             return ship
         if best is None or issues < best[0]:
             best = (issues, design)
-    ship = _build_once(p, cls, stream, best[1], engine_design, rig_design, module_design, resolve)
+    ship = _build_once(p, cls, stream, best[1], engine_design, rig_design, module_design, resolve, detail)
     ship.warnings[:0] = early_warnings
     return ship
 
@@ -214,6 +215,8 @@ class _Frame:
     chamfer: float
     ridge: float
     module: float  # module socket size
+    detail: tuple = ()
+    detail_rng: random.Random | None = None
 
 
 @dataclass
@@ -226,7 +229,7 @@ class _Hull:
     warnings: list[str] = field(default_factory=list)
 
 
-def _build_once(p, cls, stream, design, engine_design, rig_design, module_design, resolve) -> KitShip:
+def _build_once(p, cls, stream, design, engine_design, rig_design, module_design, resolve, detail=()) -> KitShip:
     clear(COLLECTION)
     coll = bpy.data.collections.new(COLLECTION)
     bpy.context.scene.collection.children.link(coll)
@@ -248,7 +251,8 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
                           / normalize.cross_section_integral(dry, length))
     fr = _Frame(length, beam, beam * vol_scale, height * vol_scale,
                 chamfer=min(max(1.0 - hp["squareness"], 0.0), 1.0), ridge=RIDGE[cls],
-                module=0.6 * beam * (0.7 + 0.6 * p["cargo"]["size"]))
+                module=0.6 * beam * (0.7 + 0.6 * p["cargo"]["size"]),
+                detail=tuple(detail), detail_rng=random.Random(f"{stream}:detail"))
 
     hull_bm = bmesh.new()
     parts_bm = bmesh.new()  # engines, pylons, rigs, modules (material 0 accent, 1 glow, 2 cargo)
@@ -348,7 +352,7 @@ def _build_hull(p, cls, design: Design, fr: _Frame, hull_bm, parts_bm) -> _Hull:
         for s in (1, -1):
             lay = layout_body(design, length, sub_beam, body_height, p["seed"])
             lay.x_offset = s * (sub_beam + 0.5 * gap)
-            loft_body(hull_bm, lay, length, chamfer, ridge)
+            _loft_detailed(hull_bm, lay, fr)
             bodies.append(lay)
         h = _Hull(bodies)
         for lay in bodies:
@@ -369,7 +373,7 @@ def _build_hull(p, cls, design: Design, fr: _Frame, hull_bm, parts_bm) -> _Hull:
         h.sockets.append(Socket("nose", Vector((0, lay.y_mid[1], 0.0)), Vector((0, 1, 0)), 0.45 * gap))
     else:
         lay = layout_body(design, length, fr.body_beam, body_height, p["seed"])
-        loft_body(hull_bm, lay, length, chamfer, ridge)
+        _loft_detailed(hull_bm, lay, fr)
         h = _Hull([lay])
         mount_engines(h, n_eng, lay)
         front = lay.stations[-1]
@@ -418,6 +422,29 @@ def _build_hull(p, cls, design: Design, fr: _Frame, hull_bm, parts_bm) -> _Hull:
     for i, sk in enumerate(h.sockets):
         sk.name = sk.name or f"Socket_{sk.kind}_{i}"
     return h
+
+
+def _loft_detailed(hull_bm, lay: HullLayout, fr: _Frame) -> None:
+    """Loft one body into ``hull_bm`` with the asked surface details (prototype). Each body is
+    detailed on its own, before add-ons join the hull mesh (booleans need one clean shell);
+    sockets keep using the plain layout."""
+    if not fr.detail:
+        loft_body(hull_bm, lay, fr.length, fr.chamfer, fr.ridge)
+        return
+    body = bmesh.new()
+    loft = hull_detail.grooved(lay, fr.length, fr.detail_rng) if "grooves" in fr.detail else lay
+    loft_body(body, loft, fr.length, fr.chamfer, fr.ridge)
+    if "panels_raised" in fr.detail or "panels_recessed" in fr.detail:
+        hull_detail.panels(body, lay.y_mid, fr.length, fr.beam, fr.detail_rng, raised="panels_raised" in fr.detail)
+    cuts = hull_detail.BOOLEAN & set(fr.detail)
+    if cuts:
+        hull_detail.boolean_difference(body, hull_detail.cutters(cuts, lay, fr.length, fr.body_beam,
+                                                                  fr.body_height, fr.detail_rng))
+    mesh = bpy.data.meshes.new("_detail_body")
+    body.to_mesh(mesh)
+    body.free()
+    hull_bm.from_mesh(mesh)
+    bpy.data.meshes.remove(mesh)
 
 
 BRIDGE_CLASSES = {"freighter", "miner"}
