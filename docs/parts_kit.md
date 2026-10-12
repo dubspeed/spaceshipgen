@@ -127,5 +127,5 @@ Abbau-Kalibrierung: mittleres Rig = 100 je Art (`scripts/kit_calibrate.py`).
 - `scripts/kit_demo.py`: rendert (a) die 10 Triebwerke, (b) Draufsicht-Silhouetten vieler
   Rumpfkombinationen, (c) Matrix Triebwerke × Hecks.
 - `tests/test_kit.py`: die Passprüfungen aus Regel 4.
-- Seit Schritt 5: der Baukasten ist der Standard-Generator (`builder: kit`); Kampfschiffe
-  nutzen bis zu Flügeln im Baukasten noch `builder: classic`.
+- Der Baukasten ist der Standard-Generator (`builder: kit`) für alle Presets, inklusive
+  Kampfschiffe (Flügel an Sockeln); `classic` bleibt nur zum Vergleich.
