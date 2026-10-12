@@ -56,6 +56,20 @@ def module_factors() -> tuple[float, ...]:
     return _by_kind(module_designs, raw)
 
 
+@functools.cache
+def engine_volume_factors() -> tuple[float, ...]:
+    vols = [_measure(engine_designs.build, i, (0, -1, 0))[1] for i in range(len(engine_designs.DESIGNS))]
+    mean = sum(vols) / len(vols)
+    return tuple(mean / v for v in vols)
+
+
+@functools.cache
+def rig_volume_factors() -> tuple[float, ...]:
+    """Multiply a rig's mass by this so all designs of a kind weigh alike at equal size."""
+    vols = [_measure(rig_designs.build, i, (0, 1, 0))[1] for i in range(len(rig_designs.DESIGNS))]
+    return _by_kind(rig_designs, vols)
+
+
 def cross_section_integral(layouts, length: float) -> float:
     """Integral of width x height along the ship over all bodies (trapezoid rule)."""
     total = 0.0

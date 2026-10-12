@@ -362,7 +362,7 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
     if rig_design is not None and mining_kind != "none":
         if nose_sockets:
             sk = nose_sockets[0]
-            radius = beam * (0.3 + 0.4 * p["mining"]["size"])  # from the model, not the socket
+            radius = beam * (0.4 + 0.5 * p["mining"]["size"])  # from the model, not the socket
             if radius > sk.radius:
                 warnings.append(f"{FIT_ISSUE}mining rig shrunk to fit the nose ({sk.radius:.2f} < {radius:.2f})")
                 radius = sk.radius
@@ -430,7 +430,8 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
         bm = parts_bm.copy()
         bm.verts.ensure_lookup_table()
         bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.index not in idx], context="VERTS")
-        pieces.append((f"Ship_{role.capitalize()}", role, bm, ("accent", "glow", "cargo")))
+        slots = ("hull", "glow", "cargo") if role == "wings" else ("accent", "glow", "cargo")  # wings in hull paint
+        pieces.append((f"Ship_{role.capitalize()}", role, bm, slots))
     parts_bm.free()
 
     parts = []
@@ -502,6 +503,13 @@ def _normalized_stats(ship, hull, engine_design, rig_design, module_design, refe
     profile = hull.profile
 
     mass = g["mass_t"] + stats.DENSITY["hull"] * (reference_hull["volume"] - actual_hull["volume"])
+    # part masses as if every design weighed the mean of its kind
+    for role, factor in (("engines", normalize.engine_volume_factors()[engine_design]),
+                         ("mining", normalize.rig_volume_factors()[rig_design] if rig_design is not None else 1.0),
+                         ("cargo", normalize.module_factors()[module_design] if module_design is not None else 1.0)):
+        obj = next((o for o in ship.parts if o["shipgen_role"] == role), None)
+        if obj is not None:
+            mass += stats.DENSITY[role] * stats._measure(obj)["volume"] * (factor - 1.0)
     thrust = g["thrust_kn"] * normalize.engine_factors()[engine_design]
     g["mass_t"] = round(mass, 2)
     g["thrust_kn"] = round(thrust, 2)
@@ -556,12 +564,12 @@ class _StatsHull:
 
 # Mining power per rig kind for the kit's rig library: efficiency x rig volume^(2/3),
 # calibrated (scripts/kit_calibrate.py) so a medium rig (size 0.5 on miner_m) averages ~100.
-KIT_MINING_EFFICIENCY = {"drill": 11.833, "laser": 15.317, "claw": 19.635, "scoop": 17.67}
+KIT_MINING_EFFICIENCY = {"drill": 7.002, "laser": 9.063, "claw": 11.618, "scoop": 10.456}
 
 
 # ---------------------------------------------------------------- greebles
 
-GREEBLE_STEP = 0.07  # spacing of candidate spots along the hull (fraction of the length)
+GREEBLE_STEP = 0.09  # spacing of candidate spots along the hull (fraction of the length)
 GREEBLE_STYLE = 3  # designs per ship, so a ship looks coherent
 
 
@@ -600,7 +608,7 @@ def _add_greebles(p, stream, bm, instances, obstacles, bodies, length, beam, cha
         if tris(hull_bm) + tris(bm) > p["max_tris"] - 200:
             break
         design = rng.choice(style)
-        m = beam * rng.uniform(0.05, 0.1)
+        m = beam * rng.uniform(0.1, 0.18)
         group = f"greeble_{len(instances)}"
         placed = []
         for pos, normal in spot:
