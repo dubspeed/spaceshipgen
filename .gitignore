@@ -221,3 +221,4 @@ __marimo__/
 
 # ShipGen exports
 output/
+.DS_Store
