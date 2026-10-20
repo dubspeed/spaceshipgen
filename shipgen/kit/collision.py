@@ -71,23 +71,31 @@ def merge(pieces: list[list[Vector]], tolerance: float = MERGE_TOLERANCE) -> lis
     return out
 
 
+def convex_object(points, name: str, collection, parent):
+    """Convex hull of ``points`` (in the parent's space) as a Godot collision-only object
+    (``name`` must end in ``SUFFIX``); None if the points span no volume."""
+    if len(points) < 4:
+        return None
+    bm = _hull_bmesh(points)
+    if not bm.faces:
+        bm.free()
+        return None
+    mesh = bpy.data.meshes.new(name.removesuffix(SUFFIX))
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = bpy.data.objects.new(name, mesh)
+    obj.display_type = "WIRE"
+    obj.hide_render = True
+    obj["shipgen_role"] = "collision"
+    collection.objects.link(obj)
+    obj.parent = parent
+    return obj
+
+
 def build_colliders(pieces: list[list[Vector]], collection, parent, prefix: str = "Col") -> list:
     objects = []
     for i, points in enumerate(pieces):
-        if len(points) < 4:
-            continue
-        bm = _hull_bmesh(points)
-        if not bm.faces:
-            bm.free()
-            continue
-        mesh = bpy.data.meshes.new(f"{prefix}_{i}")
-        bm.to_mesh(mesh)
-        bm.free()
-        obj = bpy.data.objects.new(f"{prefix}_{i}{SUFFIX}", mesh)
-        obj.display_type = "WIRE"
-        obj.hide_render = True
-        obj["shipgen_role"] = "collision"
-        collection.objects.link(obj)
-        obj.parent = parent
-        objects.append(obj)
+        obj = convex_object(points, f"{prefix}_{i}{SUFFIX}", collection, parent)
+        if obj is not None:
+            objects.append(obj)
     return objects

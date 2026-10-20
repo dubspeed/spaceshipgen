@@ -127,8 +127,15 @@ same class, mining and cargo type share the seed streams).
   `symmetry` is on. Fan n-gon caps from their centre (`bmesh.ops.poke`) instead of
   triangulating them, since boxy sections have collinear points.
 - Each part object carries `shipgen_role` (hull, wings, engines, mining, cargo; kit colliders:
-  collision); stats look parts up by it. Kit ships also export `Socket_<kind>_<i>` empties and
-  `Col_<i>-convcolonly` meshes (Godot turns those into collision shapes on import).
+  collision); stats sum parts per role (`stats.measure_roles`, in ship space via
+  `matrix_basis`). Kit ships export one object per fitted part (`Engine_<i>`, `Rig_0`,
+  `Module_<i>`, `Wings_<i>`, `Fin_<i>`; origin and rotation = its socket, extras
+  `shipgen_part` = role/kind/design/socket, own `<name>_col-convcolonly` child), plus
+  `Ship_Hull`, `Ship_Greebles`, `Socket_<kind>_<i>` empties and `Col_<i>-convcolonly` meshes
+  for the hull and add-ons (Godot turns `-convcolonly` meshes into collision shapes on import).
+- Parts are several overlapping closed shells: orient them with `meshutil.orient_outward` and
+  measure with `meshutil.volume` (per shell) - `recalc_face_normals` alone can turn a whole
+  shell inside out (invisible with back-face culling, negative volume).
 - Everything a ship creates lives in the `ShipGen` collection under the `Ship` empty;
   materials are prefixed `ShipGen_`. `generate()` replaces the previous ship.
 - Materials: plain Principled values only (no linked textures), so the glTF matches.

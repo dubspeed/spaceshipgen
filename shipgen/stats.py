@@ -11,6 +11,8 @@ import math
 
 import bmesh
 
+from . import meshutil
+
 # t per m^3 of mesh volume (hulls and modules are mostly hollow)
 DENSITY = {"hull": 0.12, "wings": 0.25, "engines": 0.4, "mining": 0.5, "cargo": 0.08, "greebles": 0.0}
 THRUST_PER_NOZZLE_M2 = 250.0  # kN per m^2 of glowing nozzle area
@@ -25,12 +27,14 @@ CARGO_KIND = {"containers": "general_m3", "hoppers": "ore_m3", "tanks": "fluid_m
 
 
 def measure(obj) -> dict:
-    """Volume, area, glowing area and extent of one part object."""
+    """Volume, area, glowing area and extent of one part object, in ship space (the part's own
+    transform relative to the ship root applied)."""
     bm = bmesh.new()
     bm.from_mesh(obj.data)
+    bm.transform(obj.matrix_basis)
     glow_slots = {i for i, m in enumerate(obj.data.materials) if m is not None and m.name.startswith("ShipGen_Glow")}
     out = {
-        "volume": abs(bm.calc_volume()),
+        "volume": meshutil.volume(bm),  # per shell: overlapping shells can't cancel out
         "area": sum(f.calc_area() for f in bm.faces),
         "glow_area": sum(f.calc_area() for f in bm.faces if f.material_index in glow_slots),
         "max_y": max((v.co.y for v in bm.verts), default=0.0),
@@ -40,13 +44,28 @@ def measure(obj) -> dict:
     return out
 
 
+def measure_roles(objects) -> dict[str, dict]:
+    """``measure`` summed per ``shipgen_role`` (a role may have several part objects)."""
+    out: dict[str, dict] = {}
+    for obj in objects:
+        d = measure(obj)
+        acc = out.get(obj["shipgen_role"])
+        if acc is None:
+            out[obj["shipgen_role"]] = d
+            continue
+        for key in ("volume", "area", "glow_area"):
+            acc[key] += d[key]
+        for key in ("max_y", "max_x"):
+            acc[key] = max(acc[key], d[key])
+    return out
+
+
 def compute(ship, hull, efficiency: dict | None = None) -> dict:
     """``hull`` is the ship's HullShape (or anything with ``length``, ``profile`` and ``y(t)``);
     ``efficiency`` overrides MINING_EFFICIENCY (each part library is calibrated separately)."""
     efficiency = MINING_EFFICIENCY if efficiency is None else efficiency
     p = ship.params
-    parts = {o["shipgen_role"]: o for o in ship.parts}
-    m = {role: measure(obj) for role, obj in parts.items()}
+    m = measure_roles(ship.parts)
 
     mass = sum(DENSITY.get(role, 0.2) * d["volume"] for role, d in m.items())
     thrust = m["engines"]["glow_area"] * THRUST_PER_NOZZLE_M2 if "engines" in m else 0.0

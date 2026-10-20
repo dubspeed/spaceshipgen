@@ -15,9 +15,10 @@ from shipgen import params
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def _mirror_ok(coords, tol=4):
-    xs = sorted(round(x, tol) + 0.0 for x, _, _ in coords)
-    return xs == sorted(-x + 0.0 for x in xs)
+def _mirror_ok(coords, tol=1e-4):
+    """The x coordinates mirror each other (sorted, the i-th smallest = -(i-th largest))."""
+    xs = sorted(x for x, _, _ in coords)
+    return all(abs(a + b) <= tol for a, b in zip(xs, reversed(xs)))
 
 
 @unittest.skipIf(bpy is None, "requires Blender (bpy)")
@@ -95,13 +96,18 @@ class KitShipTest(unittest.TestCase):
         cls.base = dict(params.load(os.path.join(ROOT, "presets", "miner_m.json")).params, spread=0)
 
     def check_ship(self, ship):
+        by_role: dict = {}
         for part in ship.parts:
             bm = bmesh.new()
             bm.from_mesh(part.data)
             self.assertTrue(all(e.is_manifold for e in bm.edges), f"{part.name}: open edges")
             self.assertFalse(any(f.calc_area() <= 1e-9 for f in bm.faces), f"{part.name}: degenerate faces")
             bm.free()
-            self.assertTrue(_mirror_ok([v.co for v in part.data.vertices]), f"{part.name} not symmetric")
+            # parts sit on their sockets: mirror symmetry holds for each role in ship space
+            by_role.setdefault(part["shipgen_role"], []).extend(
+                part.matrix_basis @ v.co for v in part.data.vertices)
+        for role, coords in by_role.items():
+            self.assertTrue(_mirror_ok(coords, tol=1e-3), f"{role} not symmetric")
         engines = [s for s in ship.sockets if s.kind == "engine"]
         for a, b in itertools.combinations(engines, 2):
             gap = ((a.pos.x - b.pos.x) ** 2 + (a.pos.z - b.pos.z) ** 2) ** 0.5
@@ -423,6 +429,7 @@ class GodotColliderTest(unittest.TestCase):
         self.assertLessEqual(len(ship.colliders), 40, "too many shapes for a game object")
         length = ship.params["hull"]["length"]
         eps = 1e-3 * length
+        bpy.context.view_layer.update()  # matrix_world of the new objects
         hulls = []
         for col in ship.colliders:
             self.assertTrue(col.name.endswith("-convcolonly"), col.name)
@@ -430,13 +437,16 @@ class GodotColliderTest(unittest.TestCase):
             planes = self.planes(col)
             for v in col.data.vertices:  # convex: no vertex in front of any face
                 self.assertTrue(all(n.dot(v.co - o) <= eps for n, o in planes), f"{col.name} is not convex")
-            hulls.append(planes)
+            m = col.matrix_world  # part colliders are children of their part: compare in ship space
+            rot = m.to_3x3()
+            hulls.append([((rot @ n).normalized(), m @ o) for n, o in planes])
         for part in ship.parts:
             if part["shipgen_role"] == "greebles":  # decoration: deliberately without colliders
                 continue
             for v in part.data.vertices:
-                inside = any(all(n.dot(v.co - o) <= eps for n, o in planes) for planes in hulls)
-                self.assertTrue(inside, f"{part.name} vertex {tuple(v.co)} outside every collider")
+                p = part.matrix_world @ v.co
+                inside = any(all(n.dot(p - o) <= eps for n, o in planes) for planes in hulls)
+                self.assertTrue(inside, f"{part.name} vertex {tuple(p)} outside every collider")
 
     def test_colliders_cover_every_hull_combination(self):
         from shipgen.kit import hull_kit as hk

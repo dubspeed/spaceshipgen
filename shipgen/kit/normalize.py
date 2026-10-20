@@ -13,6 +13,7 @@ import functools
 import bmesh
 from mathutils import Vector
 
+from .. import meshutil
 from . import engine_designs, module_designs, rig_designs
 
 
@@ -29,8 +30,8 @@ def _measured(library: str) -> tuple[tuple[float, float], ...]:
     for i in range(len(module.DESIGNS)):
         bm = bmesh.new()
         module.build(bm, i, Vector((0, 0, 0)), Vector(normal), 1.0)
-        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-        out.append((sum(f.calc_area() for f in bm.faces if f.material_index == 1), abs(bm.calc_volume())))
+        meshutil.orient_outward(bm)
+        out.append((sum(f.calc_area() for f in bm.faces if f.material_index == 1), meshutil.volume(bm)))
         bm.free()
     return tuple(out)
 

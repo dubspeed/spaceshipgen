@@ -151,7 +151,7 @@ class SHIPGEN_OT_export(bpy.types.Operator):
             self.report({"ERROR"}, "Generate a ship first")
             return {"CANCELLED"}
         p = props_to_params(props)
-        ship = generator.Ship(root=root, parts=list(root.children), params=p)
+        ship = generator.Ship(root=root, parts=list(root.children_recursive), params=p)  # incl. part colliders
         out_dir = bpy.path.abspath(props.export_dir)
         name = f"{p['class']}_{p['seed']}"
         path = export.export_glb(ship, os.path.join(out_dir, name + ".glb"))

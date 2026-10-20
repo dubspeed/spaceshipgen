@@ -137,8 +137,12 @@ und jedes Teile-Design ist auf den Mittelwert seiner Art normiert. Wie das funkt
 Die `.glb` ist auf Godot ausgerichtet (+Y oben, −Z vorne = Bug, +X rechts) und lässt sich
 direkt importieren. Sie enthält:
 
-- **Meshes nach Rolle:** `Ship_Hull`, `Ship_Engines`, `Ship_Mining`, `Ship_Cargo`,
-  `Ship_Wings`, `Ship_Greebles` unter dem Node `Ship`.
+- **Ein Node pro Teil** unter dem Node `Ship`: `Ship_Hull` (Rumpf), `Engine_0 …`,
+  `Rig_0` (Abbau-Rig), `Module_0 …`, `Wings_0` (Flügelpaar), `Fin_0 …` (Seitenleitwerk) und
+  `Ship_Greebles`. Jedes Teil hat seinen Ursprung und seine Ausrichtung auf seinem Sockel
+  (−Z = Sockelrichtung: der Bohrer dreht sich also um seine eigene Achse) und trägt in den
+  Extras `shipgen_part` = Rolle, Art, Design (z. B. `drill_triple`) und Sockelname, dazu
+  `shipgen_role`. Pylone von Außenbord-Triebwerken gehören zu ihrem Triebwerk.
 - **Werte als Metadaten:** `Ship` trägt in den glTF-Extras `shipgen` = Seed, Klasse,
   Bauplan, verbaute Designs und alle Werte. Ob Godot glTF-Extras als Node-Metadaten
   übernimmt, hängt von der Godot-Version ab – sicher ist die `<name>.json`, die daneben
@@ -147,8 +151,9 @@ direkt importieren. Sie enthält:
   `Socket_wing_*`, `Socket_fin_*` – leere Nodes, deren Vorwärtsrichtung (−Z) in
   Sockelrichtung zeigt (Triebwerk nach hinten, Rig nach vorn). Für Effekte (Düsenflammen,
   Abbaustrahl) oder späteres Umrüsten.
-- **Collision-Shapes:** `Col_*-convcolonly` – Godot macht daraus beim Import unsichtbare
-  konvexe Formen (typisch 12–17 pro Schiff). Achtung: Godot legt sie als `StaticBody3D` an;
+- **Collision-Shapes:** `Col_*-convcolonly` für Rumpf, Anbauten und Pylone, und pro Teil ein
+  eigenes Kind `<Teil>_col-convcolonly` (z. B. `Rig_0_col-convcolonly`) – so lässt sich ein
+  Treffer einem Teil zuordnen. Godot macht daraus beim Import unsichtbare konvexe Formen. Achtung: Godot legt sie als `StaticBody3D` an;
   für ein fliegendes Schiff die `CollisionShape3D`-Kinder unter den eigenen `RigidBody3D` /
   `CharacterBody3D` hängen (von Hand oder per Import-Skript).
 

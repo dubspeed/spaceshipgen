@@ -1,5 +1,6 @@
 """Export tests (.glb, .blend, preview .png). Need Blender."""
 
+import itertools
 import json
 import os
 import struct
@@ -116,8 +117,9 @@ def _rotate(q, v):
 
 @unittest.skipIf(bpy is None, "requires Blender (bpy)")
 class GodotAxesTest(unittest.TestCase):
-    """The .glb must match Godot: +Y up, -Z forward (nose), +X right. Ship parts carry no node
-    rotation; sockets are rotated so that their -Z (Godot's forward) is the socket normal."""
+    """The .glb must match Godot: +Y up, -Z forward (nose), +X right. The hull carries no node
+    rotation; sockets, and the kit's parts sitting on them, are rotated so that their -Z
+    (Godot's forward) is the socket normal."""
 
     def export(self, preset, builder):
         from shipgen import export, generator
@@ -136,26 +138,39 @@ class GodotAxesTest(unittest.TestCase):
         acc = gltf["accessors"][mesh["primitives"][0]["attributes"]["POSITION"]]
         return acc["min"], acc["max"]
 
-    def check_axes(self, p, gltf, fin_mesh):
+    @staticmethod
+    def world_corners(gltf, prefix):
+        """Bounding-box corners (glTF space) of the meshes of all nodes named ``prefix*`` under
+        the ship root (which has no transform), colliders left out."""
+        pts = []
         for node in gltf["nodes"]:
-            if not node["name"].startswith("Socket_"):
+            if not node["name"].startswith(prefix) or "mesh" not in node or node["name"].endswith("-convcolonly"):
+                continue
+            acc = gltf["accessors"][gltf["meshes"][node["mesh"]]["primitives"][0]["attributes"]["POSITION"]]
+            t = node.get("translation", (0, 0, 0))
+            for corner in itertools.product(*zip(acc["min"], acc["max"])):
+                r = _rotate(node.get("rotation", (0, 0, 0, 1)), corner)
+                pts.append(tuple(a + b for a, b in zip(r, t)))
+        return pts
+
+    def check_axes(self, p, gltf, engines, fin):
+        for node in gltf["nodes"]:
+            if not node["name"].startswith("Socket_") and "shipgen_part" not in node.get("extras", {}):
                 self.assertNotIn("rotation", node, node["name"])
         half = p["hull"]["length"] / 2
         hull_min, hull_max = self.extent(gltf, "Ship_Hull")
         self.assertAlmostEqual(hull_min[2], -half, places=3)  # nose at -Z
         self.assertAlmostEqual(hull_max[2], half, places=3)
-        engines_min, _ = self.extent(gltf, "Ship_Engines")
-        self.assertGreater(engines_min[2], 0)  # engines at the back (+Z)
-        _, wings_max = self.extent(gltf, fin_mesh)
-        self.assertGreater(wings_max[1], hull_max[1])  # tail fin points up (+Y)
+        self.assertGreater(min(z for _, _, z in self.world_corners(gltf, engines)), 0)  # engines at the back (+Z)
+        self.assertGreater(max(y for _, y, _ in self.world_corners(gltf, fin)), hull_max[1])  # tail fin up (+Y)
 
     def test_classic_axes(self):
         p, gltf = self.export("interceptor.json", "classic")  # has a tail fin
-        self.check_axes(p, gltf, "Ship_Wings")
+        self.check_axes(p, gltf, "Ship_Engines", "Ship_Wings")
 
     def test_kit_axes_and_sockets(self):
         p, gltf = self.export("interceptor.json", "kit")
-        self.check_axes(p, gltf, "Ship_Wings")
+        self.check_axes(p, gltf, "Engine_", "Fin_")
         expected = {"engine": (0, 0, 1), "nose": (0, 0, -1), "top": (0, 1, 0), "fin": (0, 1, 0)}  # glTF directions
         sockets = [n for n in gltf["nodes"] if n["name"].startswith("Socket_")]
         self.assertTrue(sockets)
@@ -167,3 +182,43 @@ class GodotAxesTest(unittest.TestCase):
                     self.assertAlmostEqual(got, want, places=4, msg=f"{node['name']} faces {forward}")
             if kind == "wing":
                 self.assertAlmostEqual(abs(forward[0]), 1.0, places=4, msg=node["name"])
+
+
+@unittest.skipIf(bpy is None, "requires Blender (bpy)")
+class PartNodesTest(unittest.TestCase):
+    """Kit parts are their own nodes: findable by name and extras, origin and orientation on their
+    socket, each with its own collider child."""
+
+    def test_miner_parts_in_the_glb(self):
+        from shipgen import export, generator
+
+        p = dict(params.load(os.path.join(ROOT, "presets", "miner_s.json")).params, spread=0)
+        ship = generator.generate(p)
+        with tempfile.TemporaryDirectory() as tmp:
+            gltf = read_glb_json(export.export_glb(ship, os.path.join(tmp, "ship.glb")))
+        nodes = {n["name"]: n for n in gltf["nodes"]}
+        root = nodes["Ship"]["extras"]["shipgen"]
+
+        rig = nodes["Rig_0"]
+        info = rig["extras"]["shipgen_part"]
+        self.assertEqual((info["role"], info["kind"], info["design"]), ("mining", "rig", root["rig"]))
+        self.assertTrue(info["design"].startswith("drill"))
+        socket = nodes[info["socket"]]
+        for key, default in (("translation", (0, 0, 0)), ("rotation", (0, 0, 0, 1))):
+            for a, b in zip(rig.get(key, default), socket.get(key, default)):
+                self.assertAlmostEqual(a, b, places=4, msg=key)
+        children = [gltf["nodes"][i]["name"] for i in rig.get("children", [])]
+        self.assertEqual(children, ["Rig_0_col-convcolonly"])
+
+        engines = [n for n in nodes if n.startswith("Engine_") and not n.endswith("-convcolonly")]
+        modules = [n for n in nodes if n.startswith("Module_") and not n.endswith("-convcolonly")]
+        self.assertEqual(len(engines), p["engines"]["count"])
+        self.assertEqual(len(modules), p["cargo"]["modules"])
+        for name in engines + modules:
+            self.assertIn(name + "_col-convcolonly", nodes)
+            self.assertEqual(nodes[name]["extras"]["shipgen_part"]["design"],
+                             root["engine" if name.startswith("Engine") else "module"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -16,8 +16,9 @@ from dataclasses import dataclass, field
 
 import bmesh
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
+from .. import meshutil
 from .. import params as params_mod
 from .. import stats
 from ..generator import Ship, clear, materials, shapes, wings
@@ -227,7 +228,7 @@ class _Hull:
     sockets: list[Socket] = field(default_factory=list)
     obstacles: list["Box"] = field(default_factory=list)  # hull add-ons parts must not cut into
     col_extras: list[list] = field(default_factory=list)  # add-ons and pylons, one convex shape each
-    pylon_verts: list = field(default_factory=list)  # pylons belong to the engines role
+    pylons: list = field(default_factory=list)  # (engine socket position, BMVerts): part of that engine
     warnings: list[str] = field(default_factory=list)
     body_bms: list = field(default_factory=list)  # detailed bodies, joined into the hull after the parts
 
@@ -296,8 +297,6 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
     col_pieces += hull.col_extras
     for inst in instances:
         inst.freeze()
-    col_pieces += [inst.points for inst in instances
-                   if inst.kind != "greeble" and inst.points]  # greebles: too small to collide
 
     def fitted(kind, names, design):  # only what is really on the ship after resolving
         return names[design] if any(i.kind == kind and i.live for i in instances) else "none"
@@ -308,8 +307,10 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
         "module": fitted("module", module_designs.NAMES, module_design),
         "wings": p["wings"]["type"] if any(i.kind == "wing" and i.live for i in instances) else "none",
     }
-    parts = _role_objects(p, coll, root, hull_bm, parts_bm, instances, hull.pylon_verts)
-    colliders = collision.build_colliders(col_pieces, coll, root)
+    designs = {"engine": loadout["engine"], "rig": loadout["rig"], "module": loadout["module"],
+               "wing": loadout["wings"]}
+    parts, part_colliders = _part_objects(p, coll, root, hull_bm, parts_bm, instances, hull.pylons, designs)
+    colliders = collision.build_colliders(col_pieces, coll, root) + part_colliders
     socket_objects = [_socket_empty(sk, coll, root) for sk in hull.sockets]
 
     ship = KitShip(root=root, parts=parts, params=p, warnings=warnings, design=design, sockets=hull.sockets,
@@ -347,8 +348,10 @@ def _build_hull(p, cls, design: Design, fr: _Frame, hull_bm, parts_bm) -> _Hull:
             h.warnings.append(f"{FIT_ISSUE}engines.size capped to {2 * r:.2f} to fit the tail")
         h.sockets += sk
         for a, c, rr in pylons:
+            refs: list = []
             h.col_extras.append(_grab(parts_bm, lambda a=a, c=c, rr=rr: shapes.beam(parts_bm, a, c, 0.5 * rr,
-                                                                                   0.25 * rr, 0), h.pylon_verts))
+                                                                                   0.25 * rr, 0), refs))
+            h.pylons.append((c.copy(), refs))
 
     def add_on(h, bm, fn, box):  # hull add-on: one convex shape, one obstacle
         h.col_extras.append(_grab(bm, fn))
@@ -594,32 +597,67 @@ def _place_parts(p, stream, design, fr: _Frame, hull: _Hull, parts_bm, engine_de
 
 
 ROLE_OF = {"engine": "engines", "rig": "mining", "module": "cargo", "wing": "wings", "greeble": "greebles"}
+PART_NAME = {"engine": "Engine", "rig": "Rig", "module": "Module"}  # wings: Wings_<i> (pair), Fin_<i>
 
 
-def _role_objects(p, coll, root, hull_bm, parts_bm, instances, pylon_verts) -> list:
-    """Split the parts mesh into one object per role (frees both bmeshes)."""
+def _socket_matrix(sk: Socket) -> Matrix:
+    """Ship space of a socket: origin at the mount, local +Y = socket normal (Godot: -Z)."""
+    return Matrix.Translation(sk.pos) @ sk.normal.to_track_quat("Y", "Z").to_matrix().to_4x4()
+
+
+def _part_objects(p, coll, root, hull_bm, parts_bm, instances, pylons, designs) -> tuple[list, list]:
+    """One object per fitted part (engine, rig, module, wing), origin and orientation at its socket,
+    with its own convex collider child; the hull and the greebles stay one object each. Frees both
+    bmeshes. Returns (part objects, part colliders)."""
     mats = materials.create_materials(p)
     parts_bm.verts.index_update()
-    role_verts: dict[str, set] = {"engines": {v.index for v in pylon_verts if v.is_valid}}
+    pieces = [("Ship_Hull", "hull", hull_bm, ("hull", "glow"), None, None)]  # glow: bridge windows
+    counters: dict[str, int] = {}
+    greebles: set = set()
+    wing_groups: dict[str, list] = {}
     for inst in instances:
-        if inst.live:
-            role_verts.setdefault(ROLE_OF[inst.kind], set()).update(v.index for v in inst.verts)
-    pieces = [("Ship_Hull", "hull", hull_bm, ("hull", "glow"))]  # glow: bridge windows
-    for role, idx in role_verts.items():
-        if not idx:
+        if not inst.live:
             continue
-        bm = parts_bm.copy()
-        bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.index not in idx], context="VERTS")
-        slots = ("hull", "glow", "cargo") if role == "wings" else ("accent", "glow", "cargo")  # wings in hull paint
-        pieces.append((f"Ship_{role.capitalize()}", role, bm, slots))
+        if inst.kind == "greeble":
+            greebles.update(v.index for v in inst.verts)
+            continue
+        if inst.kind == "wing":  # a wing pair is one closed mesh through the hull: one part
+            wing_groups.setdefault(inst.group, []).append(inst)
+            continue
+        idx = {v.index for v in inst.verts}
+        if inst.kind == "engine":  # its pylon (outboard engines) belongs to it
+            for pos, refs in pylons:
+                if (pos - inst.sk.pos).length < 1e-6:
+                    idx.update(v.index for v in refs if v.is_valid)
+        n = counters.get(inst.kind, 0)
+        counters[inst.kind] = n + 1
+        info = {"role": ROLE_OF[inst.kind], "kind": inst.kind, "design": designs[inst.kind], "socket": inst.socket}
+        pieces.append((f"{PART_NAME[inst.kind]}_{n}", ROLE_OF[inst.kind], _subset(parts_bm, idx),
+                       ("accent", "glow", "cargo"), _socket_matrix(inst.sk), info))
+    for group, insts in wing_groups.items():
+        i = group.split("_")[1]
+        pair = len(insts) > 1
+        idx = {v.index for inst in insts for v in inst.verts}
+        # a pair sits on the centre line between its sockets, in ship axes; a fin on its socket
+        matrix = (Matrix.Translation(sum((inst.sk.pos for inst in insts), Vector()) / len(insts)) if pair
+                  else _socket_matrix(insts[0].sk))
+        info = {"role": "wings", "kind": "wing" if pair else "fin", "design": designs["wing"],
+                "socket": [inst.socket for inst in insts] if pair else insts[0].socket}
+        pieces.append((f"Wings_{i}" if pair else f"Fin_{i}", "wings", _subset(parts_bm, idx),
+                       ("hull", "glow", "cargo"), matrix, info))  # wings in hull paint
+    if greebles:
+        pieces.append(("Ship_Greebles", "greebles", _subset(parts_bm, greebles), ("accent", "glow", "cargo"), None, None))
     parts_bm.free()
 
-    parts = []
-    for name, role, bm, mat_keys in pieces:
+    parts, colliders = [], []
+    for name, role, bm, mat_keys, matrix, info in pieces:
         if not bm.faces:
             bm.free()
             continue
-        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        if matrix is not None:
+            bm.transform(matrix.inverted())  # mesh in the part's own space
+        meshutil.orient_outward(bm)  # every shell of the part faces out (culling, volumes)
+        points = [v.co.copy() for v in bm.verts]
         mesh = bpy.data.meshes.new(name)
         bm.to_mesh(mesh)
         bm.free()
@@ -631,8 +669,22 @@ def _role_objects(p, coll, root, hull_bm, parts_bm, instances, pylon_verts) -> l
         coll.objects.link(obj)
         obj.parent = root
         obj["shipgen_role"] = role
+        if matrix is not None:
+            obj.matrix_basis = matrix
+            obj["shipgen_part"] = info
+            col = collision.convex_object(points, f"{name}_col{collision.SUFFIX}", coll, obj)
+            if col is not None:
+                colliders.append(col)
         parts.append(obj)
-    return parts
+    return parts, colliders
+
+
+def _subset(bm, indices: set):
+    """Copy of ``bm`` with only the vertices in ``indices`` (and their faces)."""
+    out = bm.copy()
+    out.verts.ensure_lookup_table()
+    bmesh.ops.delete(out, geom=[v for v in out.verts if v.index not in indices], context="VERTS")
+    return out
 
 
 def _socket_empty(sk: Socket, coll, root):
@@ -656,7 +708,7 @@ def _normalized_stats(ship, hull, engine_design, rig_design, module_design, refe
     Parts still count with their real geometry (size, count), so the model params decide.
     """
     g = stats.compute(ship, hull, KIT_MINING_EFFICIENCY)
-    m = {o["shipgen_role"]: stats.measure(o) for o in ship.parts}
+    m = stats.measure_roles(ship.parts)
     profile = hull.profile
 
     mass = g["mass_t"] + stats.DENSITY["hull"] * (reference_hull["volume"] - m["hull"]["volume"])
