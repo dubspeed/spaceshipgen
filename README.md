@@ -134,6 +134,9 @@ und jedes Teile-Design ist auf den Mittelwert seiner Art normiert. Wie das funkt
 
 ## In Godot verwenden
 
+Vollständige Format-Beschreibung für Importer (Schiffe und Asteroiden):
+[`docs/export_format.md`](docs/export_format.md).
+
 Die `.glb` ist auf Godot ausgerichtet (+Y oben, −Z vorne = Bug, +X rechts) und lässt sich
 direkt importieren. Sie enthält:
 

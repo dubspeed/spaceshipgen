@@ -139,6 +139,8 @@ same class, mining and cargo type share the seed streams).
 - Everything a ship creates lives in the `ShipGen` collection under the `Ship` empty;
   materials are prefixed `ShipGen_`. `generate()` replaces the previous ship.
 - Materials: plain Principled values only (no linked textures), so the glTF matches.
+- The export format (node names, extras, materials, asteroid levels) is specified for importer
+  authors in `docs/export_format.md`: update it whenever the .glb/.json structure changes.
 - `output/` and `dist/` are git-ignored. Commit presets and, occasionally, the sheets in
   `docs/renders/` and `docs/shop_stats.md`.
 
