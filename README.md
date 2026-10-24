@@ -134,7 +134,7 @@ und jedes Teile-Design ist auf den Mittelwert seiner Art normiert. Wie das funkt
 
 ## In Godot verwenden
 
-Vollständige Format-Beschreibung für Importer (Schiffe und Asteroiden):
+Vollständige Format-Beschreibung für Importer (Schiffe, Asteroiden, Wracks, Stationen):
 [`docs/export_format.md`](docs/export_format.md).
 
 Die `.glb` ist auf Godot ausgerichtet (+Y oben, −Z vorne = Bug, +X rechts) und lässt sich
@@ -175,6 +175,40 @@ wie bei den Schiffen aus der Geometrie. In Blender: Seitenleiste **ShipGen** →
 Details, Hierarchie in Godot und Werte: [`docs/asteroids/README.md`](docs/asteroids/README.md).
 
 ![Asteroiden](docs/asteroids/types.png)
+
+## Schiffswracks (Prototyp)
+
+Shop-Modelle als Wrack: Rumpf in Segmente zerbrochen, ausgefranste Bruchkanten, Löcher,
+Brandspuren, erloschene Lichter. Jedes Teil behält Namen und Design und hat einen Zustand
+(intakt, beschädigt, abgerissen, zerstört) plus Masse – fürs Bergen. In Blender: Bereich
+**Wrecks** (zerstört das oben eingestellte Schiff).
+
+```bash
+.venv/bin/python cli.py --wreck miner_m_broken
+.venv/bin/python cli.py --wreck all --no-blend
+```
+
+Details: [`docs/wrecks/README.md`](docs/wrecks/README.md).
+
+![Wracks](docs/wrecks/wrecks.png)
+
+## Raumstationen (Prototyp)
+
+Ein Modul-Baukasten auf einem 16-m-Raster (Hubs, Korridore, Habitate, Lager, Silos, Tanks,
+Raffinerien, Andockarme S/M/L, Solar, Kühler, Antennen, Kommando) mit genormten Ports – das
+Spiel kann daraus selbst Stationen bauen – und ein Generator für fertige Stationen nach Rolle
+(Außenposten, Mining, Handel) und Größe. Schiffe docken außen an Andockarmen an, wie im Hafen:
+Liegeplätze sind Knoten mit Position, Bugrichtung und maximaler Schiffslänge. In Blender:
+Bereich **Stations**.
+
+```bash
+.venv/bin/python cli.py --station mining_m
+.venv/bin/python cli.py --station-kit --no-render
+```
+
+Details und Vertrag des Baukastens: [`docs/stations/README.md`](docs/stations/README.md).
+
+![Stationen](docs/stations/docked.png)
 
 ## Entwicklung
 

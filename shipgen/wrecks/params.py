@@ -12,7 +12,8 @@ from ..params import Field
 
 SCHEMA: dict[str, Any] = {
     "seed": Field(int, 1, 0, 2**31 - 1, description="Random seed of the damage (where it broke, what was lost)"),
-    "ship_seed": Field(int, -1, -1, 2**31 - 1, description="Seed of the ship before it was wrecked (-1 = same as seed)"),
+    "ship_seed": Field(int, -1, -1, 2**31 - 1,
+                       description="Seed of the ship before it was wrecked (-1 = same as seed)"),
     "damage": Field(float, 0.5, 0.0, 1.0, description="How much of the ship's parts is damaged, torn off or destroyed"),
     "breaks": Field(int, 1, 0, 3, description="Places where the hull broke apart"),
     "spread": Field(float, 0.5, 0.0, 1.0, description="How far the pieces drifted apart (and how much they turned)"),

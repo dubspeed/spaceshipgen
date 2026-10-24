@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 import bmesh
 import bpy
 from mathutils import Euler, Matrix, Vector
+from mathutils.bvhtree import BVHTree
 
 from .. import meshutil, stats
 from ..asteroids import geometry as geo
@@ -287,7 +288,8 @@ class _Wrecker:
             offset = Vector()
             for i in range(min(k, anchor), max(k, anchor)):  # the breaks between it and the anchor
                 n = self.planes[i][0]
-                offset += n * (1 if k > anchor else -1) * self.length * (0.04 + 0.1 * spread) * self.rng.uniform(0.7, 1.3)
+                gap = self.length * (0.04 + 0.1 * spread) * self.rng.uniform(0.7, 1.3)
+                offset += n * (1 if k > anchor else -1) * gap
             turn = Euler([self.rng.uniform(-1, 1) * math.radians(25) * spread * (k != anchor) for _ in range(3)])
             mesh = bpy.data.meshes.new(f"Hull_{k}")
             bm.to_mesh(mesh)
@@ -334,7 +336,8 @@ class _Wrecker:
         long = [e for e in boundary if e.calc_length() > 1.2 * jag]
         if long:
             bmesh.ops.subdivide_edges(bm, edges=long, cuts=1)
-        rim = {v for e in bm.edges if e.is_boundary for v in e.verts}
+        # ordered (not a set): the rng draws must not depend on memory addresses
+        rim = list(dict.fromkeys(v for e in bm.edges if e.is_boundary for v in e.verts))
         for v in rim:
             n_out = min(cuts, key=lambda c: abs(c[0].dot(v.co) - c[1]))[0]
             normals = [f.normal for f in v.link_faces]
@@ -345,11 +348,12 @@ class _Wrecker:
             if t.length < 1e-6:
                 continue
             reach = min((e.calc_length() for e in v.link_edges if not e.is_boundary), default=0.0)
-            v.co += t.normalized() * min(0.8 * reach, jag * self.rng.choice((0.1, 0.5, 1.0)) * self.rng.uniform(0.6, 1.0))
-        for f in {f for v in rim for f in v.link_faces}:
+            tooth = jag * self.rng.choice((0.1, 0.5, 1.0)) * self.rng.uniform(0.6, 1.0)
+            v.co += t.normalized() * min(0.8 * reach, tooth)
+        for f in dict.fromkeys(f for v in rim for f in v.link_faces):
             if self.rng.random() < 0.3 + 0.6 * self.p["burn"]:
                 f.material_index = burnt
-        bmesh.ops.triangulate(bm, faces=list({f for v in rim for f in v.link_faces if len(f.verts) > 3}))
+        bmesh.ops.triangulate(bm, faces=list(dict.fromkeys(f for v in rim for f in v.link_faces if len(f.verts) > 3)))
         caps = _fill_loops(bm)
         for f in caps:
             f.material_index = inside
@@ -370,15 +374,22 @@ class _Wrecker:
                 continue
             size = math.sqrt(f.calc_area())
             normal = f.normal.copy()
+            # never deeper than a third of the way to the far side (thin hulls, fins)
+            centre = f.calc_center_median()
+            hit = BVHTree.FromBMesh(bm).ray_cast(centre - normal * 1e-3 * self.length, -normal)
+            room = (hit[0] - centre).length if hit[0] is not None else 0.0
+            scale = min(1.0, room / (0.32 * size) / 3.0)
+            if scale < 0.2:
+                continue
             res = bmesh.ops.inset_individual(bm, faces=[f], thickness=0.18 * size, depth=0.0)
             for g in res["faces"]:
                 g.material_index = burnt
             f.material_index = inside
             for v in f.verts:
-                v.co -= normal * 0.12 * size * self.rng.uniform(0.5, 1.0)
+                v.co -= normal * 0.12 * size * scale * self.rng.uniform(0.5, 1.0)
             poked = bmesh.ops.poke(bm, faces=[f])
             for v in poked["verts"]:
-                v.co -= normal * 0.2 * size
+                v.co -= normal * 0.2 * size * scale
         bmesh.ops.dissolve_degenerate(bm, edges=bm.edges[:], dist=1e-5 * self.length)
 
     def _burn_patches(self, bm, burnt: int, share: float) -> None:

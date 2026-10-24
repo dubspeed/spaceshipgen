@@ -1,6 +1,7 @@
 # ShipGen
 
-Procedural low-poly spaceship generator for Blender, producing ships for a Godot game about
+Procedural low-poly spaceship generator for Blender (plus asteroids, wrecks and modular
+stations), producing ships for a Godot game about
 asteroid mining, freight and transport (combat exists but is secondary). Core idea: `generator.generate(params) -> Ship`
 is a pure function of a validated parameter dict, independent of any UI. Two builders
 (`params["builder"]`): **`kit`** (default for every preset; hulls from designed sections, parts
@@ -102,9 +103,21 @@ same class, mining and cargo type share the seed streams).
   has a convex `<name>_col-convcolonly` child (exact hull of its vertices); deeper levels are
   parented under their chunk and hidden; per-chunk stats from the mesh; `COMPOSITION` =
   ore/metal/ice constants). Presets in `presets/asteroids/`.
+- `shipgen/wrecks/` – wrecks of shop models (prototype, `docs/wrecks/README.md`): builds the kit
+  ship, cuts hull + greebles into drifting segments `Hull_<k>` (ragged rim, hollow cap), pits,
+  scorch, dead glow; parts keep names/extras plus `shipgen_salvage` state; segment colliders are
+  the ship's hull pieces clipped by the break planes. Shares the `ShipGen` collection with ships.
+  Presets in `presets/wrecks/` name their ship preset under `"ship"`.
+- `shipgen/stations/` – station module kit + layouts (prototype, `docs/stations/README.md`):
+  `modules.py` holds the grid contract (16 m cells, ports on cell faces, port 0 on -Y of cell 0,
+  reserved berth cells; `ModuleKitTest` checks every design) and the designs; `__init__.py` lays
+  out stations (spine of hubs, symmetric arm chains per role) and builds the kit (`build_kit`).
+  Rng draws must never depend on set order (BMesh element hashes are addresses).
+  Presets in `presets/stations/`.
 - `shipgen/metrics.py` – top-view silhouette metrics (numpy rasteriser).
 - `shipgen/export.py` – `.glb`, `.blend`, Cycles previews (`three_quarter` and orthographic `top`).
-- `shipgen/ui.py` – sidebar tab "ShipGen": ship panel + "Asteroids" panel (`ASTEROID_GROUPS`,
+- `shipgen/ui.py` – sidebar tab "ShipGen": ship panel + "Wrecks", "Asteroids", "Stations"
+  panels (`WRECK_GROUPS`, `ASTEROID_GROUPS`, `STATION_GROUPS`,
   `show_level` toggles the break levels in the viewport); properties generated from the schemas
   (nested keys flattened as `hull__length`); `tests/test_ui.py` runs the operators headless.
 - `cli.py`, `presets/*.json` (one per class), `tests/`, `scripts/`.
@@ -135,7 +148,7 @@ same class, mining and cargo type share the seed streams).
   for the hull and add-ons (Godot turns `-convcolonly` meshes into collision shapes on import).
 - Parts are several overlapping closed shells: orient them with `meshutil.orient_outward` and
   measure with `meshutil.volume` (per shell) - `recalc_face_normals` alone can turn a whole
-  shell inside out (invisible with back-face culling, negative volume).
+  shell inside out (wrong lighting, negative volume).
 - Everything a ship creates lives in the `ShipGen` collection under the `Ship` empty;
   materials are prefixed `ShipGen_`. `generate()` replaces the previous ship.
 - Materials: plain Principled values only (no linked textures), so the glTF matches.
@@ -169,6 +182,11 @@ python3 scripts/stats_table.py /tmp/l/*.json
 # asteroids: CLI (presets/asteroids/), demo sheets (docs/asteroids/)
 .venv/bin/python cli.py --asteroid ore_m
 .venv/bin/python scripts/asteroid_demo.py
+# wrecks and stations: CLI (presets/wrecks/, presets/stations/), sheets (docs/stations/, docs/wrecks/)
+.venv/bin/python cli.py --wreck miner_m_broken
+.venv/bin/python cli.py --station mining_m
+.venv/bin/python cli.py --station-kit --no-render
+.venv/bin/python scripts/station_demo.py [--only modules,stations,docked,wrecks]
 # installable extension zip -> dist/
 python3 scripts/build_extension.py
 ```

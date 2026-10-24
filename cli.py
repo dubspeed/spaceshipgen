@@ -3,6 +3,7 @@
     .venv/bin/python cli.py --preset fighter                 # bpy module (see scripts/setup_env.sh)
     .venv/bin/python cli.py --preset fighter --seeds 1-20 --no-render
     .venv/bin/python cli.py --preset freighter --set hull.length=40 --set style.wear=0.8
+    .venv/bin/python cli.py --asteroid ore_m | --wreck miner_m_broken | --station mining_m | --station-kit
     blender -b --factory-startup -P cli.py -- --preset fighter    # with a Blender binary
 
 Writes <name>.glb, <name>.blend, <name>.png (+ <name>_top.png) and <name>.json (validated params +
@@ -57,7 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
     src = ap.add_mutually_exclusive_group()
     src.add_argument("--params", help="path to a parameter JSON file")
     src.add_argument("--preset", help="preset name(s) in presets/ without .json: 'fighter', 'miner_s,miner_m' or 'all'")
-    src.add_argument("--asteroid", help="asteroid preset name(s) in presets/asteroids/: 'ore_m', 'ore_m,ice_l' or 'all'")
+    src.add_argument("--asteroid",
+                     help="asteroid preset name(s) in presets/asteroids/: 'ore_m', 'ore_m,ice_l' or 'all'")
+    src.add_argument("--wreck", help="wreck preset name(s) in presets/wrecks/ (each names its ship preset) or 'all'")
+    src.add_argument("--station", help="station preset name(s) in presets/stations/ or 'all'")
+    src.add_argument("--station-kit", action="store_true",
+                     help="every station module design, unassembled (style from --params, a station JSON)")
     ap.add_argument("--out", default=os.path.join(ROOT, "output"), help="output directory")
     ap.add_argument("--name", help="output file base name (default: <preset>_<seed>)")
     ap.add_argument("--seed", type=int, help="override the seed")
@@ -91,8 +97,12 @@ def load_jobs(args: argparse.Namespace) -> list[tuple[str, dict]]:
     if args.params:
         with open(args.params, encoding="utf-8") as f:
             return [(os.path.splitext(os.path.basename(args.params))[0], json.load(f))]
-    folder = os.path.join(PRESET_DIR, "asteroids") if args.asteroid else PRESET_DIR
-    names = [n.strip() for n in (args.asteroid or args.preset or "fighter").split(",") if n.strip()]
+    if args.station_kit:
+        return [("station_kit", {})]
+    sub = "asteroids" if args.asteroid else "wrecks" if args.wreck else "stations" if args.station else ""
+    folder = os.path.join(PRESET_DIR, sub)
+    names = [n.strip() for n in (args.asteroid or args.wreck or args.station or args.preset or "fighter").split(",")
+             if n.strip()]
     if names == ["all"]:
         names = sorted(os.path.splitext(n)[0] for n in os.listdir(folder) if n.endswith(".json"))
     jobs = []
@@ -105,12 +115,25 @@ def load_jobs(args: argparse.Namespace) -> list[tuple[str, dict]]:
 def run(args: argparse.Namespace) -> list[dict]:
     import bpy
 
-    from shipgen import asteroids, export
+    from shipgen import asteroids, export, stations, wrecks
     from shipgen import generator as ship_generator
     from shipgen import params as ship_params
 
-    # same pipeline for both: asteroids bring their own schema and generator
-    params, generator = (asteroids.params, asteroids) if args.asteroid else (ship_params, ship_generator)
+    # same pipeline for all: asteroids, wrecks and stations bring their own schema and generator
+    if args.asteroid:
+        params, make = asteroids.params, asteroids.generate
+    elif args.wreck:
+        params = wrecks.params
+
+        def make(p, ship_name):  # a wreck preset names the shop model it was
+            with open(os.path.join(PRESET_DIR, ship_name + ".json"), encoding="utf-8") as f:
+                return wrecks.generate(p, json.load(f))
+    elif args.station:
+        params, make = stations.params, stations.generate
+    elif args.station_kit:
+        params, make = stations.params, stations.build_kit
+    else:
+        params, make = ship_params, ship_generator.generate
 
     jobs = load_jobs(args)
     width, height = (int(v) for v in args.resolution.lower().split("x"))
@@ -120,7 +143,11 @@ def run(args: argparse.Namespace) -> list[dict]:
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
     results = []
+    if args.station_kit and args.params:
+        with open(args.params, encoding="utf-8") as f:
+            jobs = [("station_kit", json.load(f))]
     for base_name, base in jobs:
+        ship_name = base.pop("ship", "miner_m") if args.wreck else None
         for path, value in args.overrides:
             params.set_path(base, path, value)
         seeds = args.seeds or [args.seed if args.seed is not None else base.get("seed", 0)]
@@ -131,18 +158,23 @@ def run(args: argparse.Namespace) -> list[dict]:
             if args.strict and checked.warnings:
                 raise SystemExit(f"invalid parameters ({len(checked.warnings)} problems), see warnings above")
 
-            ship = generator.generate(checked.params)
+            ship = make(checked.params, ship_name) if args.wreck else make(checked.params)
             name = args.name if (args.name and single) else f"{args.name or base_name}_{seed}"
+            if args.station_kit:
+                name = args.name or "station_kit"
             files = export.export_all(
                 ship, args.out, name, glb=not args.no_glb, blend=not args.no_blend,
                 views=views, resolution=(width, height), samples=args.samples, frame=args.frame,
             )
-            stats = ship.stats if args.asteroid else ship.stats()
+            stats = ship.stats() if callable(ship.stats) else ship.stats
             result = {"name": name, "seed": seed, "files": files, "stats": stats, "warnings": ship.warnings}
             os.makedirs(args.out, exist_ok=True)
             with open(os.path.join(args.out, name + ".json"), "w", encoding="utf-8") as f:
-                json.dump({"model": base_name, "model_params": checked.params, "params": ship.params,
-                           "stats": result["stats"]}, f, indent=2)
+                record = {"model": base_name, "model_params": checked.params, "params": ship.params,
+                          "stats": result["stats"]}
+                if args.wreck:  # the ship it was
+                    record.update(ship=ship_name, ship_params=ship.ship_params)
+                json.dump(record, f, indent=2)
             print("SHIPGEN_RESULT " + json.dumps(result), flush=True)
             results.append(result)
     return results
