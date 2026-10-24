@@ -77,6 +77,36 @@ class PanelTest(unittest.TestCase):
         bpy.ops.shipgen.asteroid_random_seed()
         self.assertNotEqual(props.seed, seed)
 
+    def test_every_wreck_and_station_parameter_is_in_its_panel(self):
+        from shipgen.stations import params as sp
+        from shipgen.wrecks import params as wp
+
+        self.assertEqual(sorted(k for _, keys in self.ui.WRECK_GROUPS for k in keys), sorted(wp.SCHEMA))
+        station_keys = [self.ui._prop_name(path) for path, _ in sp.iter_fields(sp.SCHEMA)]
+        self.assertEqual(sorted(k for _, keys in self.ui.STATION_GROUPS for k in keys), sorted(station_keys))
+
+    def test_wreck_and_station_operators(self):
+        scene = bpy.context.scene
+        scene.shipgen.seed = 3
+        scene.shipgen_wreck.breaks = 1
+        bpy.ops.shipgen.wreck_generate()
+        root = bpy.data.objects["Wreck"]
+        self.assertEqual(root["shipgen_wreck"]["stats"]["segments"], 2)
+        scene.shipgen_station.size = "small"
+        bpy.ops.shipgen.station_generate()
+        self.assertIn("shipgen_station", bpy.data.objects["Station"])
+        with tempfile.TemporaryDirectory() as tmp:
+            scene.shipgen_wreck.export_dir = tmp
+            scene.shipgen_station.export_dir = tmp
+            bpy.ops.shipgen.wreck_export()
+            bpy.ops.shipgen.station_export()
+            bpy.ops.shipgen.station_kit()
+            bpy.ops.shipgen.station_export()
+            files = sorted(os.listdir(tmp))
+        self.assertIn("station_kit.glb", files)
+        self.assertTrue(any(f.startswith("station_") and f.endswith(".glb") and f != "station_kit.glb" for f in files))
+        self.assertTrue(any(f.startswith("wreck_") and f.endswith(".glb") for f in files))
+
     def test_ship_operators_still_work(self):
         bpy.ops.shipgen.load_preset(filepath=os.path.join(ROOT, "presets", "miner_s.json"))
         self.assertEqual(bpy.context.scene.shipgen.mining__type, "drill")

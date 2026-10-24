@@ -1,7 +1,7 @@
-# Exportformat: Schiffe und Asteroiden
+# Exportformat: Schiffe, Asteroiden, Wracks und Stationen
 
 Diese Beschreibung richtet sich an alle, die einen Importer für die ShipGen-Exporte schreiben
-(Godot oder eine andere Engine). Sie beschreibt Stand **Extension 0.3.0** (Baukasten-Builder
+(Godot oder eine andere Engine). Sie beschreibt Stand **Extension 0.4.0** (Baukasten-Builder
 `kit`, Standard für alle Presets). Alles hier ist aus echten Exporten nachgeprüft.
 
 Pro Objekt entstehen zwei Dateien mit gleichem Namen:
@@ -17,7 +17,7 @@ Die Kommandozeile benennt Schiffe `<preset>_<seed>` (z. B. `miner_s_101`), Aster
 
 ---
 
-## 1. Allgemeines (gilt für beide)
+## 1. Allgemeines (gilt für alle)
 
 ### Koordinaten und Einheiten
 
@@ -27,7 +27,8 @@ Die Kommandozeile benennt Schiffe `<preset>_<seed>` (z. B. `miner_s_101`), Aster
   „physikalisch angehaucht“; das Spiel balanciert mit eigenen Faktoren.
 - **Transformationen:** nur `translation` und `rotation` (Quaternion `[x, y, z, w]`), nie
   `scale`. Fehlende Felder bedeuten die Identität (glTF lässt sie weg).
-- Der Wurzelknoten (`Ship` bzw. `Asteroid`) liegt im Ursprung ohne Transformation.
+- Der Wurzelknoten (`Ship`, `Asteroid`, `Wreck`, `Station` bzw. `StationKit`) liegt im
+  Ursprung ohne Transformation.
 
 ### Meshes und Materialien
 
@@ -317,7 +318,154 @@ Kommandozeile: `{"model", "model_params", "params", "stats"}`; Panel-Export:
 
 ---
 
-## 4. Checkliste für einen Importer
+## 4. Wracks
+
+Ein Wrack ist ein Shop-Schiff (Kit-Builder), zerbrochen und teilweise zerstört. Teile und
+ihre Extras sind dieselben wie beim Schiff (Abschnitt 2), dazu kommen Rumpfsegmente,
+Splitter und Zustände. Kommandozeile: `<preset>_<seed>` (z. B. `miner_m_broken_1`),
+Panel: `wreck_<klasse>_<schiffsseed>_<seed>`.
+
+### Knoten-Hierarchie
+
+```
+Wreck                                 extras.shipgen_wreck (Gesamtwerte)
+├── Hull_0                            Rumpfsegment (mit Greebles)   extras.wreck_segment
+│   ├── Hull_0_col_0-convcolonly …    seine Collider
+│   ├── Engine_0                      montiertes Teil (intact/damaged) extras.shipgen_part, shipgen_salvage
+│   │   └── Engine_0_col-convcolonly
+│   └── Module_2 …
+├── Hull_1 …                          weitere Segmente (bei breaks > 0), verschoben und gedreht
+├── Module_0                          abgerissenes Teil (detached), direkt unter Wreck
+│   └── Module_0_col-convcolonly
+└── Debris_0                          Splitter                      extras.wreck_debris
+    └── Debris_0_col-convcolonly
+```
+
+- **Segmente** `Hull_<k>`: Ursprung = Schwerpunkt des Segments, Translation und Rotation
+  relativ zu `Wreck`. `wreck_segment = {index, volume_m3, mass_t, anchor}`; genau ein Segment
+  hat `anchor: true` (liegt, wo das Schiff lag). Collider `Hull_<k>_col_<j>-convcolonly`.
+- **Teile** haben ihre Schiffsnamen (`Engine_<n>`, `Rig_0`, `Module_<n>`, `Wings_<i>`,
+  `Fin_<i>`) – es fehlen die zerstörten. Montierte Teile hängen unter ihrem Segment, ihre
+  Transformation ist relativ zum Segment; abgerissene hängen direkt unter `Wreck`.
+  `shipgen_salvage = {state, condition, mass_t}` mit `state` ∈ `intact`, `damaged`,
+  `detached` (`destroyed` steht nur in der Gesamtliste), `condition` 0–1.
+- **Splitter** `Debris_<i>`: `wreck_debris = {source, volume_m3, mass_t}`; `source` =
+  `hull` oder der Name des zerstörten Teils.
+- Keine `Socket_*`-Knoten und keine `Col_*`-Knoten des Schiffs.
+
+### Gesamtwerte: `Wreck.extras.shipgen_wreck`
+
+```json
+{
+  "seed": 1, "ship_seed": 1, "class": "miner",
+  "stats": {
+    "ship": {"seed": 1, "class": "miner", "design": "mono/flat/stepped/hammer",
+             "engine": "ring_drive", "rig": "laser_twin", "module": "ore_skip", "wings": "none"},
+    "segments": 2, "debris": 11,
+    "parts": {"intact": 2, "damaged": 3, "detached": 1, "destroyed": 1},
+    "salvage": [{"name": "Engine_0", "kind": "engine", "design": "ring_drive",
+                 "state": "intact", "condition": 0.89, "mass_t": 1.59}, "…"],
+    "salvage_mass_t": 26.6,
+    "scrap_mass_t": 68.61
+  }
+}
+```
+
+`salvage_mass_t` = Teile (ohne zerstörte), `scrap_mass_t` = Segmente + Splitter.
+
+### Materialien (Wrack)
+
+Wie beim Schiff (`ShipGen_Hull`, `ShipGen_Accent`, `ShipGen_Cargo`, abgenutzt), dazu
+`ShipGen_Wreck_Inside` (offene Enden, Lochböden), `ShipGen_Wreck_Burnt` (Brandspuren) und
+`ShipGen_Wreck_Dead` (statt `ShipGen_Glow`: erloschene Düsen und Fenster; ein Wrack hat kein
+`ShipGen_Glow`).
+
+### `<name>.json` (Wrack)
+
+Kommandozeile: `{"model", "model_params", "params", "stats", "ship", "ship_params"}` –
+`ship` = Name des Shop-Presets, `ship_params` = das gebaute Schiff. Panel-Export:
+`{"params", "ship_params", "stats"}`.
+
+---
+
+## 5. Stationen
+
+Stationen bestehen aus Modulen auf einem Würfelraster (`grid_m` = 16 m). Es gibt zwei
+Exporte: eine **fertige Station** (`Station`, Kommandozeile `<preset>_<seed>`, Panel
+`station_<rolle>_<seed>`) und den **Modul-Baukasten** (`StationKit`, `station_kit.glb`): jedes
+Design jeder Modulart einmal, nebeneinander, damit das Spiel selbst Stationen bauen kann.
+
+### Knoten-Hierarchie
+
+```
+Station                               extras.shipgen_station (Gesamtwerte)
+├── Hub_0                             Modul                         extras.station_module
+│   ├── Hub_0_col_0-convcolonly …
+│   ├── Hub_0_Port_0 … Hub_0_Port_5   Ports                         extras.station_port
+├── DockM_0                           Andockarm
+│   ├── DockM_0_col_0-convcolonly …
+│   ├── DockM_0_Port_0
+│   ├── DockM_0_Berth_0               Liegeplatz                    extras.station_berth
+│   └── DockM_0_Berth_1
+└── …
+```
+
+- **Modulnamen:** `<Art>_<n>` mit `Hub`, `Corridor`, `Habitat`, `Storage`, `Silo`, `Tank`,
+  `Refinery`, `DockS`, `DockM`, `DockL`, `Solar`, `Radiator`, `Antenna`, `Command`; im
+  Baukasten `<Art>_v<design>` (z. B. `DockL_v1`).
+- **Modul-Ursprung** = Mitte seiner ersten Rasterzelle; Translation = Zelle × 16 m, Rotation
+  um Vielfache von 90°. Lokale +Y-Achse (Godot −Z) = Hauptachse des Moduls.
+- `station_module = {kind, design, grid_m, cells, reserved, ports, stats}`: `cells` /
+  `reserved` = belegte / freizuhaltende Zellen im Modul-Rahmen (Blender-Achsen, ganze Zahlen),
+  `ports` = `[{cell, dir}]` (Zelle und Richtung im Modul-Rahmen, Blender-Achsen),
+  `stats` = Werte des Moduls (siehe unten).
+- **Ports** `<Modul>_Port_<k>`: Mitte der Zellseite, lokale +Y (Godot −Z) zeigt nach außen.
+  `station_port = {index, connected, radius_m}`; `connected` ist im Baukasten immer `false`.
+  Zwei Module passen zusammen, wenn ein Port auf dem anderen liegt und beide gegeneinander
+  zeigen; Port 0 ist der Anschluss, mit dem ein Modul angebaut wird.
+- **Liegeplätze** `<Modul>_Berth_<k>`: wo der Ursprung eines angedockten Schiffs hinkommt;
+  lokale +Y (Godot −Z) = Bug, +Z (Godot +Y) = oben – die Transformation des Liegeplatzes
+  direkt auf den Schiffsknoten setzen. `station_berth = {index, size, max_length_m}` mit
+  `size` S (≤ 20 m), M (≤ 40 m), L (≤ 64 m).
+- Collider `<Modul>_col_<j>-convcolonly`, Identitäts-Transformation relativ zum Modul.
+  Schmale Andockklammern und Leuchten haben keinen Collider.
+
+### Modulwerte: `station_module.stats`
+
+Immer `volume_m3`, `mass_t`; je nach Art zusätzlich `general_m3` (storage), `ore_m3` (silo),
+`fluid_m3` (tank), `crew` (habitat, command), `refine_m3_h` (refinery), `power_kw` (solar),
+`cooling_kw` (radiator), `berths` (Andockarme, z. B. `["M", "M"]`).
+
+### Gesamtwerte: `Station.extras.shipgen_station`
+
+```json
+{
+  "seed": 2, "role": "mining", "size": "medium", "grid_m": 16.0,
+  "stats": {"modules": 19, "volume_m3": 22297.3, "mass_t": 2230.1,
+            "general_m3": 0.0, "ore_m3": 4469.7, "fluid_m3": 0.0, "crew": 40,
+            "refine_m3_h": 103.4, "power_kw": 243.6, "cooling_kw": 0.0,
+            "kinds": {"hub": 2, "silo": 3, "dock_l": 3, "…": 0},
+            "berths": {"S": 0, "M": 4, "L": 3}, "free_ports": 0}
+}
+```
+
+`free_ports` = Ports ohne Gegenstück (dort kann das Spiel anbauen). Der Baukasten trägt
+`StationKit.extras.shipgen_station_kit = {grid_m, port_radius_m, kinds}`; seine `.json` hat
+unter `stats.modules` die `station_module`-Daten aller Designs.
+
+### Materialien (Station)
+
+`ShipGen_Hull`, `ShipGen_Accent`, `ShipGen_Cargo`, `ShipGen_Glow` (Fenster, Lichter) wie beim
+Schiff (Palette aus `style`), dazu `ShipGen_Solar` (Solarpaneele).
+
+### `<name>.json` (Station)
+
+`{"model", "model_params", "params", "stats"}` (Kommandozeile) bzw. `{"params", "stats"}`
+(Panel).
+
+---
+
+## 6. Checkliste für einen Importer
 
 - [ ] Achsen übernehmen (glTF = Godot), keine Umrechnung nötig.
 - [ ] Knoten mit Suffix `-convcolonly` als konvexe Collision-Shapes behandeln, nicht rendern.
@@ -329,6 +477,10 @@ Kommandozeile: `{"model", "model_params", "params", "stats"}`; Panel-Export:
 - [ ] Asteroid: Ebenen > 1 beim Laden ausblenden und Collider deaktivieren; beim Zerbrechen
       Elternteil aus, Kinder an.
 - [ ] Optionale Knoten (Rig, Module, Flügel, Greebles) dürfen fehlen.
+- [ ] Wrack: Teile über `shipgen_salvage` zum Bergen anbieten; Segmente, Teile und Splitter
+      sind eigene Körper (eigene Collider).
+- [ ] Station: Module über `station_module` erkennen; Schiffe an `*_Berth_*` andocken;
+      eigene Stationen aus dem Baukasten über Ports auf dem 16-m-Raster zusammensetzen.
 
 Das Format hat derzeit kein eigenes Versionsfeld; maßgeblich ist die Version der Extension
 (`shipgen/blender_manifest.toml`). Ältere Exporte (bis 0.2.0) hatten statt einzelner Teile

@@ -86,6 +86,21 @@ class CliTest(unittest.TestCase):
             self.assertEqual(sorted(os.listdir(out)), sorted(
                 f"fighter_{s}.{e}" for s in (1, 2, 3) for e in ("glb", "json")))
 
+    def test_wreck_station_and_kit(self):
+        with tempfile.TemporaryDirectory() as out:
+            for args in (("--wreck", "hauler_s_stripped"), ("--station", "outpost_s"), ("--station-kit",)):
+                proc, results = self.run_cli(*args, "--no-render", "--no-blend", "--out", out)
+                self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
+                self.assertEqual(len(results), 1)
+            self.assertEqual(sorted(os.listdir(out)), sorted(
+                f"{n}.{e}" for n in ("hauler_s_stripped_2", "outpost_s_1", "station_kit") for e in ("glb", "json")))
+            with open(os.path.join(out, "hauler_s_stripped_2.json")) as f:
+                meta = json.load(f)
+            self.assertEqual(meta["ship"], "hauler_s")
+            self.assertEqual(meta["ship_params"]["class"], "shuttle")
+            with open(os.path.join(out, "outpost_s_1.json")) as f:
+                self.assertGreater(sum(json.load(f)["stats"]["berths"].values()), 0)
+
     def test_strict_rejects_invalid_params(self):
         with tempfile.TemporaryDirectory() as out:
             proc, results = self.run_cli("--preset", "fighter", "--set", "hull.length=-5", "--strict",

@@ -1,0 +1,7 @@
+{
+  "ship": "fighter",
+  "seed": 4,
+  "damage": 0.8,
+  "breaks": 1,
+  "burn": 0.9
+}
