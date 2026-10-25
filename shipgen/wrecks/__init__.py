@@ -32,7 +32,7 @@ import bpy
 from mathutils import Euler, Matrix, Vector
 from mathutils.bvhtree import BVHTree
 
-from .. import meshutil, stats
+from .. import fx, meshutil, stats
 from ..asteroids import geometry as geo
 from ..generator import Ship
 from ..generator.materials import MATERIAL_PREFIX, _principled
@@ -53,12 +53,13 @@ class Wreck:
     warnings: list[str] = field(default_factory=list)
     colliders: list = field(default_factory=list)
     stats: dict = field(default_factory=dict)
+    fx_objects: list = field(default_factory=list)  # FX anchors (fx.py)
 
     bounds = Ship.bounds
 
     @property
     def objects(self):
-        return [self.root, *self.parts, *self.colliders]
+        return [self.root, *self.parts, *self.colliders, *self.fx_objects]
 
 
 def generate(raw_params: dict, ship_params: dict) -> Wreck:
@@ -112,6 +113,10 @@ class _Wrecker:
         self.length = ship.params["hull"]["length"]
         self.beam = 0.5 * self.length * ship.params["hull"]["width_ratio"]
         self.mats = _materials()
+        self.fx_rng = random.Random(f"{p['seed']}:wreck_fx")  # own stream: FX never change the shapes
+        self.tear_fx: dict[int, list] = {}  # segment -> [(pos, direction, size)] in ship space
+        self.hole_fx: list = []
+        self.fx_objects: list = []
 
     # ------------------------------------------------------------ plan
 
@@ -208,11 +213,13 @@ class _Wrecker:
             bm.free()
             entry = {"state": fate, "condition": round(condition, 2), "mass_t": mass}
             obj["shipgen_salvage"] = entry
+            if fate in ("damaged", "detached"):  # leaking gas along its mount axis
+                self._fx(obj, Vector(), Vector((0, 1, 0)), "vent", 0.3 * obj.dimensions.length / math.sqrt(3))
             salvage.append({"name": obj.name, "kind": info["kind"], "design": info["design"], **entry})
             kept.append(obj)
         debris += self._fragments(segments, rests)
 
-        for obj in [*ship.socket_objects, *hull_cols, hull, *greebles]:
+        for obj in [*ship.socket_objects, *ship.fx_objects, *hull_cols, hull, *greebles]:
             _remove(obj)
         self.root.name = "Wreck"
         ship_info = dict(self.root["shipgen"].to_dict())
@@ -222,7 +229,7 @@ class _Wrecker:
         colliders = seg_cols + [c for o in kept for c in o.children if c.get("shipgen_role") == "collision"]
         colliders += [c for d in debris for c in d.children]
         wreck = Wreck(root=self.root, segments=segments, parts=[*segments, *kept, *debris], params=self.p,
-                      ship_params=ship.params, colliders=colliders)
+                      ship_params=ship.params, colliders=colliders, fx_objects=self.fx_objects)
         wreck.stats = self._stats(ship_info, segments, debris, salvage)
         self.root["shipgen_wreck"] = {"seed": self.p["seed"], "ship_seed": ship.params["seed"],
                                       "class": ship.params["class"], "stats": wreck.stats}
@@ -272,7 +279,7 @@ class _Wrecker:
                                        plane_co=n * d, plane_no=n, clear_outer=True)
                 cuts.append((n, d))
             if cuts:
-                self._tear(bm, cuts, inside, burnt)
+                self._tear(bm, cuts, inside, burnt, k)
             seg_bms.append(bm)
         whole.free()
 
@@ -325,11 +332,16 @@ class _Wrecker:
                     if col is not None:
                         colliders.append(col)
                         j += 1
+            for pos, direction, size in self.tear_fx.get(k, []):
+                self._fx(obj, pos - centre, direction, "spark", size)
+            for pos, direction, size in self.hole_fx:
+                if self._segment_of(pos) == k:
+                    self._fx(obj, pos - centre, direction, "smoke", size)
             obj["wreck_segment"] = {"index": k, "volume_m3": round(vols[k], 2),
                                     "mass_t": round(vols[k] * SCRAP_DENSITY, 2), "anchor": k == anchor}
         return segments, colliders, rests
 
-    def _tear(self, bm, cuts, inside: int, burnt: int) -> None:
+    def _tear(self, bm, cuts, inside: int, burnt: int, k: int = 0) -> None:
         """Ragged rim on every open end, then a dark cap pushed into the segment (hollow look)."""
         jag = 0.12 * self.beam
         boundary = [e for e in bm.edges if e.is_boundary]
@@ -338,6 +350,10 @@ class _Wrecker:
             bmesh.ops.subdivide_edges(bm, edges=long, cuts=1)
         # ordered (not a set): the rng draws must not depend on memory addresses
         rim = list(dict.fromkeys(v for e in bm.edges if e.is_boundary for v in e.verts))
+        for n, d in cuts:  # sparks: a few points on each torn rim
+            on_cut = [v for v in rim if abs(n.dot(v.co) - d) < 1e-3 * self.length]
+            for v in self.fx_rng.sample(on_cut, min(3, len(on_cut))):
+                self.tear_fx.setdefault(k, []).append((v.co.copy(), n.copy(), 0.06 * self.beam))
         for v in rim:
             n_out = min(cuts, key=lambda c: abs(c[0].dot(v.co) - c[1]))[0]
             normals = [f.normal for f in v.link_faces]
@@ -390,6 +406,7 @@ class _Wrecker:
             poked = bmesh.ops.poke(bm, faces=[f])
             for v in poked["verts"]:
                 v.co -= normal * 0.2 * size * scale
+                self.hole_fx.append((v.co.copy(), normal, 0.3 * size))  # smoke out of the pit
         bmesh.ops.dissolve_degenerate(bm, edges=bm.edges[:], dist=1e-5 * self.length)
 
     def _burn_patches(self, bm, burnt: int, share: float) -> None:
@@ -398,6 +415,10 @@ class _Wrecker:
                 f.material_index = burnt
 
     # ------------------------------------------------------------ parts
+
+    def _fx(self, parent, pos, direction, kind: str, size: float) -> None:
+        n = sum(1 for o in self.fx_objects if o["shipgen_fx"]["kind"] == kind)
+        self.fx_objects.append(fx.anchor(f"FX_{kind}_{n}", self.coll, parent, pos, direction, kind, size))
 
     def _scorch(self, obj, share: float) -> None:
         mesh = obj.data

@@ -62,6 +62,7 @@ class Module:
     reserved: list[tuple[int, int, int]] = field(default_factory=list)
     berths: list[Berth] = field(default_factory=list)
     pieces: list[list[Vector]] = field(default_factory=list)  # convex collider point sets
+    fx: list = field(default_factory=list)  # FX anchors: (kind, pos, direction, size, extras)
 
 
 class Builder:
@@ -91,6 +92,9 @@ class Builder:
         before = set(self.bm.verts)
         shapes.beam(self.bm, Vector(a), Vector(b), w, h, material, up=up)
         self._track(before, collide)
+
+    def fx(self, kind, pos, direction, size, **extra):
+        self.m.fx.append((kind, Vector(pos), Vector(direction), size, extra))
 
     def port(self, cell, direction):
         """Flange collar ending on the cell face, plus a neck towards the cell centre."""
@@ -250,11 +254,13 @@ def tank(b: Builder, v: int):
             c = Vector((math.cos(a), 0, math.sin(a))) * 0.26 * GRID
             b.loft(c - Y * r, Y, [(0, 0.45 * r), (0.35 * r, r), (1.65 * r, r), (2 * r, 0.45 * r)], sides=8,
                    material=CARGO)
+        b.fx("vent", Vector((1, 0, 1)).normalized() * (0.26 * GRID + r), Vector((1, 0, 1)), 0.3 * r)
     else:  # one big cylinder around the spine
         r = 0.4 * GRID
         length = y1 - y0 - 1.0
         b.loft(Y * (y0 + 0.5), Y, [(0, 0.5 * r), (0.2 * length, r), (0.8 * length, r), (length, 0.5 * r)], sides=10,
                material=CARGO)
+        b.fx("vent", (0, 0, r), Z, 0.15 * r)
     for cell, d in m.ports:
         b.port(cell, d)
 
@@ -273,6 +279,7 @@ def refinery(b: Builder, v: int):
         b.loft((x * GRID, y, 0.22 * GRID), Z, [(0, 0.07 * GRID), (0.2 * GRID, 0.06 * GRID)], sides=6, material=ACCENT)
         b.loft((x * GRID, y, 0.42 * GRID), Z, [(0, 0.065 * GRID), (0.04 * GRID, 0.065 * GRID)], sides=6, material=GLOW,
                collide=False)
+        b.fx("vent", (x * GRID, y, 0.46 * GRID), Z, 0.065 * GRID)  # exhaust of the stack
     for x in (-1, 1):  # furnace windows
         b.box((x * w - 0.2, y0 + 0.15 * GRID, -0.1 * GRID), (x * w + 0.2, y1 - 0.15 * GRID, 0.0), GLOW, collide=False)
     for cell, d in m.ports:
@@ -291,6 +298,7 @@ def _dock(b: Builder, v: int, size: str, n_cells: int):
         b.box((x - 0.3, y0, pier), (x + 0.3, y1, pier + 0.5), ACCENT, collide=False)
     b.box((-pier * 1.6, y1 - 0.15 * GRID, -pier * 1.6), (pier * 1.6, y1 + 0.3, pier * 1.6), ACCENT)
     b.box((-0.6, y1 + 0.3, -0.6), (0.6, y1 + 0.06 * GRID, 0.6), GLOW, collide=False)  # beacon
+    b.fx("beacon", (0, y1 + 0.06 * GRID, 0), Y, 0.6)
     offset = H + BERTH_GAP + half_beam
     mid = -H + BERTH_GAP + 0.5 * length
     sides = (1, -1) if v == 0 else (1,)
@@ -305,6 +313,8 @@ def _dock(b: Builder, v: int, size: str, n_cells: int):
                   ACCENT, collide=False)
             b.box((s * reach - 0.2, y - 0.2, 0.12 * GRID), (s * reach + 0.2, y + 0.2, 0.12 * GRID + 0.4), GLOW,
                   collide=False)
+        b.fx("berth_light", (s * reach, y0 + 0.5 * (y1 - y0) / clamps, 0.12 * GRID + 0.4), Z, 0.4,
+             berth=len(m.berths))  # on the first clamp; the game colours it (free / taken)
         m.berths.append(Berth(Vector((s * offset, mid, 0.0)), Y.copy(), Z.copy(), size))
     # the berths: every cell a docked ship's box touches stays free
     own = set(m.cells)
@@ -379,6 +389,7 @@ def antenna(b: Builder, v: int):
         for y in (0.15, 0.3):
             b.beam((-0.4 * GRID, y * GRID, 0), (0.4 * GRID, y * GRID, 0), 0.025 * GRID, material=ACCENT)
     b.box((-0.4, 0.44 * GRID, -0.4), (0.4, 0.47 * GRID, 0.4), GLOW, collide=False)
+    b.fx("beacon", (0, 0.47 * GRID, 0), Y, 0.4)
     for cell, d in m.ports:
         b.port(cell, d)
 

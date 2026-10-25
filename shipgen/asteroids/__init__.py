@@ -30,6 +30,7 @@ import bmesh
 import bpy
 from mathutils import Euler, Vector
 
+from .. import fx
 from ..generator import Ship
 from ..generator import clear as _clear
 from ..generator.materials import MATERIAL_PREFIX
@@ -77,12 +78,13 @@ class Asteroid:
     params: dict
     warnings: list[str] = field(default_factory=list)
     stats: dict = field(default_factory=dict)
+    fx_objects: list = field(default_factory=list)  # FX anchors (fx.py), ice only
 
     bounds = Ship.bounds
 
     @property
     def objects(self):
-        return [self.root, *(c.obj for c in self.chunks), *(c.collider for c in self.chunks)]
+        return [self.root, *(c.obj for c in self.chunks), *(c.collider for c in self.chunks), *self.fx_objects]
 
 
 def generate(raw_params: dict) -> Asteroid:
@@ -255,11 +257,30 @@ def _build_objects(p, tree: list[Chunk], fractures, surf) -> Asteroid:
 
     for chunk in tree:
         make(chunk, root, Vector())
-    rock = Asteroid(root=root, parts=[c.obj for c in tree], chunks=chunks, params=p)
+    fx_objects = _ice_vents(p, tree, coll) if p["composition"] == "ice" else []
+    rock = Asteroid(root=root, parts=[c.obj for c in tree], chunks=chunks, params=p, fx_objects=fx_objects)
     rock.stats = _stats(p, tree, chunks)
     root["shipgen_asteroid"] = {"seed": p["seed"], "composition": p["composition"], "shape": p["shape"],
                                 "stats": rock.stats}
     return rock
+
+
+ICE_VENTS = 4  # sublimation plumes on an ice asteroid
+
+
+def _ice_vents(p, tree, coll) -> list:
+    """Ice sublimates: plumes at the outermost points of a few level-1 chunks (children of the
+    chunk, so they go when it breaks)."""
+    rng = random.Random(f"{p['seed']}:ice_fx")
+    centre = sum((c.obj.location for c in tree), Vector()) / len(tree)
+    out = []
+    for i, chunk in enumerate(rng.sample(tree, min(ICE_VENTS, len(tree)))):
+        verts = chunk.obj.data.vertices
+        v = max(verts, key=lambda v: (chunk.obj.location + v.co - centre).length)
+        direction = chunk.obj.location + v.co - centre
+        out.append(fx.anchor(f"FX_sublimation_{i}", coll, chunk.obj, v.co, direction, "sublimation",
+                             0.08 * p["size_m"]))
+    return out
 
 
 def _collider(name: str, points, coll):

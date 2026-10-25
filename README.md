@@ -160,6 +160,11 @@ direkt importieren. Sie enthält:
   für ein fliegendes Schiff die `CollisionShape3D`-Kinder unter den eigenen `RigidBody3D` /
   `CharacterBody3D` hängen (von Hand oder per Import-Skript).
 
+- **FX-Anker:** leere Nodes `FX_<art>_<i>` für Partikel und Lichter – Düsenstrahl, Steuerdüsen,
+  Bohrkopf, Positionslichter; bei Wracks Funken/Rauch, bei Stationen Leuchtfeuer,
+  Liegeplatz-Lichter, Abgas. −Z = Emissionsrichtung. Die Effekte baust du in Godot;
+  [`godot/shipgen_fx.gd`](godot/shipgen_fx.gd) hängt sie automatisch an.
+
 ## Asteroiden (Prototyp)
 
 Asteroiden aus Erz, Metall oder Eis, vorgebrochen in Brocken bis zu einer Mindestgröße – jeder

@@ -27,7 +27,7 @@ import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
-from .. import meshutil
+from .. import fx, meshutil
 from ..generator import Ship
 from ..generator import clear as _clear
 from ..generator.materials import _principled, create_materials
@@ -296,6 +296,10 @@ def _module_object(pl: Placement, name: str, coll, parent, mats, matrix: Matrix)
                    modules.PORT_RADIUS)
         e["station_port"] = {"index": k, "connected": k in pl.connected, "radius_m": modules.PORT_RADIUS}
         empties.append(e)
+    for k, (kind, pos, direction, size, extra) in enumerate(m.fx):
+        if "berth" in extra:  # the berth's node name, so the game can pair them
+            extra = {"berth": f"{name}_Berth_{extra['berth']}"}
+        empties.append(fx.anchor(f"{name}_FX_{kind}_{k}", coll, obj, pos, direction, kind, size, **extra))
     for k, br in enumerate(m.berths):
         e = _empty(f"{name}_Berth_{k}", coll, obj, br.pos, br.nose, br.up, 0.25 * br.max_length)
         e.empty_display_type = "ARROWS"

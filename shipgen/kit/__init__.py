@@ -18,7 +18,7 @@ import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
-from .. import meshutil
+from .. import fx, meshutil
 from .. import params as params_mod
 from .. import stats
 from ..generator import Ship, clear, materials, shapes, wings
@@ -35,6 +35,7 @@ class KitShip(Ship):
     design: Design | None = None
     sockets: list[Socket] = field(default_factory=list)
     socket_objects: list = field(default_factory=list)
+    fx_objects: list = field(default_factory=list)  # FX anchors (fx.py)
     colliders: list = field(default_factory=list)  # convex "-convcolonly" meshes for Godot
     engine_design: int = 0
     loadout: dict = field(default_factory=dict)
@@ -44,7 +45,7 @@ class KitShip(Ship):
 
     @property
     def objects(self):
-        return [self.root, *self.parts, *self.socket_objects, *self.colliders]
+        return [self.root, *self.parts, *self.socket_objects, *self.fx_objects, *self.colliders]
 
 
 # ---------------------------------------------------------------- hull pieces
@@ -312,9 +313,10 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
     parts, part_colliders = _part_objects(p, coll, root, hull_bm, parts_bm, instances, hull.pylons, designs)
     colliders = collision.build_colliders(col_pieces, coll, root) + part_colliders
     socket_objects = [_socket_empty(sk, coll, root) for sk in hull.sockets]
+    fx_objects = _fx_anchors(fr, hull, instances, coll, root)
 
     ship = KitShip(root=root, parts=parts, params=p, warnings=warnings, design=design, sockets=hull.sockets,
-                   socket_objects=socket_objects, colliders=colliders, engine_design=engine_design, loadout=loadout,
+                   socket_objects=socket_objects, fx_objects=fx_objects, colliders=colliders, engine_design=engine_design, loadout=loadout,
                    conflicts=conflicts, instances=instances, obstacles=hull.obstacles)
     nose_sockets = [s for s in hull.sockets if s.kind == "nose"]
     nose_y = nose_sockets[0].pos.y if nose_sockets else 0.5 * length
@@ -698,6 +700,63 @@ def _socket_empty(sk: Socket, coll, root):
     coll.objects.link(empty)
     empty.parent = root
     return empty
+
+
+def _fx_anchors(fr: _Frame, hull: _Hull, instances, coll, root) -> list:
+    """Where the game attaches effects: engine exhaust, rig work point, attitude thrusters (RCS)
+    in pairs at both ends, navigation lights (port red, starboard green, tail white)."""
+    out = []
+    counts: dict[str, int] = {}
+
+    def add(kind, pos, direction, size, **extra):
+        n = counts.get(kind, 0)
+        counts[kind] = n + 1
+        out.append(fx.anchor(f"FX_{kind}_{n}", coll, root, pos, direction, kind, size, **extra))
+
+    for inst in instances:  # the far end of the part along its socket normal, its radius there
+        if not inst.live or inst.kind not in ("engine", "rig"):
+            continue
+        n = inst.sk.normal
+        coords = inst.coords()
+        depth = max((c - inst.sk.pos).dot(n) for c in coords)
+        radius = max(((c - inst.sk.pos) - n * (c - inst.sk.pos).dot(n)).length for c in coords)
+        add("exhaust" if inst.kind == "engine" else "mining", inst.sk.pos + n * depth, n,
+            (0.8 if inst.kind == "engine" else 0.5) * radius)
+
+    length, size = fr.length, 0.08 * fr.beam
+    twin = len(hull.bodies) > 1
+    for y in (0.32 * length, -0.32 * length):
+        for lay in hull.bodies:
+            st = section_at(lay, y, length)
+            cx = lay.x_offset
+            add("rcs", (cx, y, st.top), (0, 0, 1), size)
+            add("rcs", (cx, y, -st.bottom), (0, 0, -1), size)
+            for side in (1, -1):
+                if twin and side * cx < 0:
+                    continue  # the inner flank of a twin body faces the other body
+                add("rcs", (cx + side * st.half_width, y, 0.0), (side, 0, 0), size)
+
+    # navigation lights at the widest point (wing tips, else the hull) and on the tail
+    wing_pts = [c for i in instances if i.live and i.kind == "wing" for c in i.coords()]
+    if wing_pts:
+        tip = max(wing_pts, key=lambda c: c.x)
+    else:
+        best = None
+        for k in range(21):
+            y = (-0.45 + 0.9 * k / 20) * length
+            for lay in hull.bodies:
+                st = section_at(lay, y, length)
+                x = lay.x_offset + st.half_width
+                if best is None or x > best.x:
+                    best = Vector((x, y, 0.0))
+        tip = best
+    light = 0.03 * length
+    add("nav_light", (-tip.x, tip.y, tip.z), (-1, 0, 0), light, color="red")
+    add("nav_light", tip, (1, 0, 0), light, color="green")
+    tail = section_at(hull.bodies[0], -0.48 * length, length)
+    add("nav_light", (0.0 if not twin else hull.bodies[0].x_offset, -0.5 * length, tail.top), (0, -1, 0), light,
+        color="white")
+    return out
 
 
 def _normalized_stats(ship, hull, engine_design, rig_design, module_design, reference_hull) -> dict:

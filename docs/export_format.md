@@ -465,7 +465,44 @@ Schiff (Palette aus `style`), dazu `ShipGen_Solar` (Solarpaneele).
 
 ---
 
-## 6. Checkliste für einen Importer
+## 6. FX-Anker (Partikel und Lichter)
+
+Partikeleffekte und Lichter baut das Spiel selbst (glTF kennt keine Partikel, und Effekte hängen
+vom Spielzustand ab). Die Generatoren liefern nur, **wo** sie hingehören: leere Knoten mit
+`extras.shipgen_fx = {kind, size, …}`.
+
+- **Name:** enthält immer `FX_<kind>_<i>` – Schiff/Wrack/Asteroid `FX_<kind>_<i>`, Station
+  `<Modul>_FX_<kind>_<k>`. Ohne Extras reicht also der Name.
+- **Richtung:** die lokale **−Z-Achse** (Blender +Y) zeigt, wohin der Effekt geht (Düsenstrahl,
+  Funkenflug, Rauchfahne). Für `GPUParticles3D` die Richtung im `ParticleProcessMaterial` auf
+  `(0, 0, −1)` stellen.
+- **`size`:** Größenordnung in Metern (Düsenradius, Lochgröße …) zum Skalieren des Effekts.
+- Anker hängen an dem Teil, zu dem sie gehören (Rumpf, Segment, Modul, Brocken): Wird es
+  bewegt, abgerissen oder zerbrochen, geht der Effekt mit.
+
+| `kind` | wo | Extras | Hängt an |
+|---|---|---|---|
+| `exhaust` | Ende jeder Düse, Richtung = Schub nach hinten | – | `Ship` |
+| `rcs` | Steuerdüsen vorn und hinten (oben, unten, Flanken) | – | `Ship` |
+| `mining` | Arbeitspunkt des Rigs (Spitze), nach vorn | – | `Ship` |
+| `nav_light` | Positionslichter: Backbord links, Steuerbord rechts, Heck | `color`: `red` / `green` / `white` | `Ship` |
+| `spark` | an den Bruchkanten, aus dem Segment heraus | – | `Hull_<k>` |
+| `smoke` | Böden der Löcher, nach außen | – | `Hull_<k>` |
+| `vent` | Wrack: beschädigte/abgerissene Teile; Station: Raffinerie-Kamine, Tanks | – | Teil / Modul |
+| `beacon` | Blinklicht an Pier-Spitzen und Antennen | – | Modul |
+| `berth_light` | Liegeplatz-Licht (frei/belegt einfärben) | `berth`: Name des Liegeplatz-Knotens | Modul |
+| `sublimation` | Eis: Dampffahnen an den äußersten Punkten einiger Brocken | – | `Chunk_<i>` |
+
+Ein Wrack hat keine `exhaust`/`rcs`/`mining`/`nav_light` (alles tot), Erz- und
+Metallasteroiden haben keine Anker. Staub beim Zerbrechen eines Asteroiden: am Ursprung
+(= Schwerpunkt) des zerbrechenden Brockens.
+
+Godot-Hilfsskript: [`godot/shipgen_fx.gd`](../godot/shipgen_fx.gd) (`ShipGenFx.attach(root,
+{"exhaust": preload(...), ...})` sucht alle Anker und hängt die Effekt-Szenen an).
+
+---
+
+## 7. Checkliste für einen Importer
 
 - [ ] Achsen übernehmen (glTF = Godot), keine Umrechnung nötig.
 - [ ] Knoten mit Suffix `-convcolonly` als konvexe Collision-Shapes behandeln, nicht rendern.
@@ -477,6 +514,7 @@ Schiff (Palette aus `style`), dazu `ShipGen_Solar` (Solarpaneele).
 - [ ] Asteroid: Ebenen > 1 beim Laden ausblenden und Collider deaktivieren; beim Zerbrechen
       Elternteil aus, Kinder an.
 - [ ] Optionale Knoten (Rig, Module, Flügel, Greebles) dürfen fehlen.
+- [ ] FX-Anker (`*FX_<kind>_*`) nicht rendern; Effekte daran hängen, Emission entlang −Z.
 - [ ] Wrack: Teile über `shipgen_salvage` zum Bergen anbieten; Segmente, Teile und Splitter
       sind eigene Körper (eigene Collider).
 - [ ] Station: Module über `station_module` erkennen; Schiffe an `*_Berth_*` andocken;

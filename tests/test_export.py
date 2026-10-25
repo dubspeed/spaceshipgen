@@ -118,7 +118,7 @@ def _rotate(q, v):
 @unittest.skipIf(bpy is None, "requires Blender (bpy)")
 class GodotAxesTest(unittest.TestCase):
     """The .glb must match Godot: +Y up, -Z forward (nose), +X right. The hull carries no node
-    rotation; sockets, and the kit's parts sitting on them, are rotated so that their -Z
+    rotation; sockets, FX anchors and the kit's parts sitting on them, are rotated so that their -Z
     (Godot's forward) is the socket normal."""
 
     def export(self, preset, builder):
@@ -155,7 +155,8 @@ class GodotAxesTest(unittest.TestCase):
 
     def check_axes(self, p, gltf, engines, fin):
         for node in gltf["nodes"]:
-            if not node["name"].startswith("Socket_") and "shipgen_part" not in node.get("extras", {}):
+            extras = node.get("extras", {})
+            if not node["name"].startswith("Socket_") and "shipgen_part" not in extras and "shipgen_fx" not in extras:
                 self.assertNotIn("rotation", node, node["name"])
         half = p["hull"]["length"] / 2
         hull_min, hull_max = self.extent(gltf, "Ship_Hull")

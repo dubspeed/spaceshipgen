@@ -114,6 +114,10 @@ same class, mining and cargo type share the seed streams).
   out stations (spine of hubs, symmetric arm chains per role) and builds the kit (`build_kit`).
   Rng draws must never depend on set order (BMesh element hashes are addresses).
   Presets in `presets/stations/`.
+- `shipgen/fx.py` – FX anchors (empties with `shipgen_fx` extras, local +Y = emission
+  direction, name contains `FX_<kind>_`) that every generator adds; the game owns the particle
+  effects (`godot/shipgen_fx.gd` attaches them). FX draws use their own rng stream so they never
+  change shapes.
 - `shipgen/metrics.py` – top-view silhouette metrics (numpy rasteriser).
 - `shipgen/export.py` – `.glb`, `.blend`, Cycles previews (`three_quarter` and orthographic `top`).
 - `shipgen/ui.py` – sidebar tab "ShipGen": ship panel + "Wrecks", "Asteroids", "Stations"
