@@ -10,6 +10,8 @@ import re
 import bpy
 from mathutils import Vector
 
+from . import atlas as atlas_mod
+
 PREVIEW_COLLECTION = "ShipGen_Preview"
 
 
@@ -54,15 +56,17 @@ def _plain_names(objects):
             idb.name = old
 
 
-def export_glb(ship, path: str) -> str:
-    """Export ``ship.objects`` (a ship or an asteroid). Objects hidden in the viewport (an
-    asteroid's deeper chunk levels) are unhidden for the export: hidden ones can't be selected."""
+def export_glb(ship, path: str, atlas: bool = True) -> str:
+    """Export ``ship.objects`` (a ship, wreck, station or asteroid). Objects hidden in the
+    viewport (an asteroid's deeper chunk levels) are unhidden for the export: hidden ones can't
+    be selected. ``atlas``: one material per mesh (palette atlas, see atlas.py) instead of one
+    per paint."""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     hidden = [o for o in ship.objects if o.hide_viewport]
     for obj in hidden:
         obj.hide_viewport = False
     try:
-        with _plain_names(ship.objects):
+        with (atlas_mod.baked(ship.objects) if atlas else contextlib.nullcontext()), _plain_names(ship.objects):
             _select_only(ship.objects)
             bpy.ops.export_scene.gltf(
                 filepath=path,
@@ -242,12 +246,13 @@ def export_all(
     resolution=(960, 540),
     samples: int = 16,
     frame: float | None = None,
+    atlas: bool = True,
 ) -> dict[str, str]:
     """Write ``<name>.glb``, ``<name>.blend`` and one PNG per view into ``out_dir``:
     ``<name>.png`` (three-quarter) and ``<name>_top.png``. Pass ``views=()`` to skip rendering."""
     paths = {}
     if glb:
-        paths["glb"] = export_glb(ship, os.path.join(out_dir, name + ".glb"))
+        paths["glb"] = export_glb(ship, os.path.join(out_dir, name + ".glb"), atlas=atlas)
     for view in reversed(views):  # three-quarter last, so the .blend keeps that camera
         key = "png" if view == "three_quarter" else f"png_{view}"
         suffix = "" if view == "three_quarter" else f"_{view}"

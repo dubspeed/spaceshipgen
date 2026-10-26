@@ -57,9 +57,13 @@ class ExportTest(unittest.TestCase):
         names = {n["name"] for n in gltf["nodes"]}
         self.assertEqual(names, {"Ship", "Ship_Hull", "Ship_Wings", "Ship_Engines"})
         self.assertEqual(len(gltf["meshes"]), 3)
-        materials = {m["name"]: m for m in gltf["materials"]}
-        self.assertEqual(set(materials), {"ShipGen_Hull", "ShipGen_Accent", "ShipGen_Glow"})
-        self.assertGreater(max(materials["ShipGen_Glow"]["emissiveFactor"]), 0)
+        # one atlas material (atlas.py): colour, metal/roughness and glow textures
+        self.assertEqual([m["name"] for m in gltf["materials"]], ["ShipGen_Atlas"])
+        mat = gltf["materials"][0]
+        self.assertIn("emissiveTexture", mat)
+        self.assertIn("baseColorTexture", mat["pbrMetallicRoughness"])
+        self.assertIn("metallicRoughnessTexture", mat["pbrMetallicRoughness"])
+        self.assertTrue(all(s.get("magFilter") == 9728 for s in gltf["samplers"]))  # NEAREST
         # triangle count survives the export
         indices = sum(
             gltf["accessors"][prim["indices"]]["count"] for mesh in gltf["meshes"] for prim in mesh["primitives"]

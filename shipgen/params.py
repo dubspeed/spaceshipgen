@@ -85,6 +85,7 @@ SCHEMA: dict[str, Any] = {
     "style": {
         "palette": Field(str, "military_grey", choices=PALETTES),
         "wear": Field(float, 0.3, 0.0, 1.0),
+        "decals": Field(bool, True, description="Registration and company emblem on the flanks (kit builder)"),
     },
     "builder": Field(str, "kit", choices=BUILDERS,
                      description="kit = hull from sections + parts on sockets; classic = old generator (wings)"),

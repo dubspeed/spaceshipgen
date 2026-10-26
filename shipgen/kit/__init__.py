@@ -18,7 +18,7 @@ import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
-from .. import fx, meshutil
+from .. import decals, fx, meshutil
 from .. import params as params_mod
 from .. import stats
 from ..generator import Ship, clear, materials, shapes, wings
@@ -292,6 +292,7 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
             i.verts = []
         warnings.append(f"{FIT_ISSUE}{group} dropped to stay within max_tris")
 
+    decal_text = _add_decals(p, cls, hull_bm, parts_bm, hull, fr, instances, tris) if p["style"]["decals"] else None
     _add_greebles(p, stream, parts_bm, instances, hull.obstacles, hull.bodies, fr, hull_bm, tris)
 
     # plain loft segments cover grooves and the trench (they only take material away); raised
@@ -315,7 +316,8 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
     }
     designs = {"engine": loadout["engine"], "rig": loadout["rig"], "module": loadout["module"],
                "wing": loadout["wings"]}
-    parts, part_colliders = _part_objects(p, coll, root, hull_bm, parts_bm, instances, hull.pylons, designs)
+    parts, part_colliders = _part_objects(p, coll, root, hull_bm, parts_bm, instances, hull.pylons, designs,
+                                          decal_text)
     colliders = collision.build_colliders(col_pieces, coll, root) + part_colliders
     socket_objects = [_socket_empty(sk, coll, root) for sk in hull.sockets]
     fx_objects = _fx_anchors(fr, hull, instances, coll, root)
@@ -612,13 +614,18 @@ def _socket_matrix(sk: Socket) -> Matrix:
     return Matrix.Translation(sk.pos) @ sk.normal.to_track_quat("Y", "Z").to_matrix().to_4x4()
 
 
-def _part_objects(p, coll, root, hull_bm, parts_bm, instances, pylons, designs) -> tuple[list, list]:
+def _part_objects(p, coll, root, hull_bm, parts_bm, instances, pylons, designs,
+                  decal_text=None) -> tuple[list, list]:
     """One object per fitted part (engine, rig, module, wing), origin and orientation at its socket,
     with its own convex collider child; the hull and the greebles stay one object each. Frees both
     bmeshes. Returns (part objects, part colliders)."""
     mats = materials.create_materials(p)
+    hull_keys = ("hull", "glow")  # glow: bridge windows
+    if decal_text:
+        hull_keys += ("decal_text", "decal_emblem")
+        mats.update(_decal_materials(p, mats, decal_text))
     parts_bm.verts.index_update()
-    pieces = [("Ship_Hull", "hull", hull_bm, ("hull", "glow"), None, None)]  # glow: bridge windows
+    pieces = [("Ship_Hull", "hull", hull_bm, hull_keys, None, None)]
     counters: dict[str, int] = {}
     greebles: set = set()
     wing_groups: dict[str, list] = {}
@@ -836,6 +843,80 @@ class _StatsHull:
 # Mining power per rig kind for the kit's rig library: efficiency x rig volume^(2/3),
 # calibrated (scripts/kit_calibrate.py) so a medium rig (size 0.5 on miner_m) averages ~100.
 KIT_MINING_EFFICIENCY = {"drill": 7.002, "laser": 9.063, "claw": 11.618, "scoop": 10.456}
+
+
+# ---------------------------------------------------------------- decals
+
+DECAL_TEXT, DECAL_EMBLEM = 2, 3  # hull material slots (after hull, glow)
+TEXT_SPOTS = (0.18, 0.08, 0.28, -0.02, 0.36)  # where along the flank (fraction of the length)
+EMBLEM_SPOTS = (-0.14, -0.24, -0.04, 0.4)
+
+
+def _add_decals(p, cls, hull_bm, parts_bm, hull: _Hull, fr: _Frame, instances, tris) -> str | None:
+    """Registration (both flanks) and company emblem (both flanks, further aft) on the outer
+    flanks, where no part sits and the surface is flat enough; within the triangle budget.
+    Returns the registration text, or None if nothing was placed."""
+    text = f"{decals.CLASS_CODE.get(cls, 'XX')}-{p['seed'] % 1000:03d}"
+    uv = hull_bm.loops.layers.uv.get("UVMap") or hull_bm.loops.layers.uv.new("UVMap")
+    surface = decals.Surface(hull_bm)
+    length = fr.length
+    taken = [i.box() for i in instances if i.live and i.kind != "greeble"] + list(hull.obstacles)
+    text_px = decals._text_mask(text)
+    aspect = len(text_px[0]) / len(text_px)
+    placed = False
+    for spots, mat, ratio, nu, nv in ((TEXT_SPOTS, DECAL_TEXT, aspect, 6, 2),
+                                      (EMBLEM_SPOTS, DECAL_EMBLEM, 1.0, 3, 3)):
+        done = False
+        for t, shrink in ((t, k) for k in (1.0, 0.75, 0.55) for t in spots):  # big first, then smaller
+            y = t * length
+            # the starboard decal is projected, the port one is its mirror image (exact symmetry)
+            lay = max(hull.bodies, key=lambda b: b.x_offset)
+            st = section_at(lay, y, length)
+            height = shrink * min(0.32 * (st.top + st.bottom), 0.05 * length)
+            if mat == DECAL_EMBLEM:
+                height *= 1.3
+            width = height * ratio
+            centre = Vector((lay.x_offset + st.half_width, y, 0.5 * (st.top - st.bottom)))
+            grid = surface.project(centre, Vector((1, 0, 0)), Vector((0, 0, 1)), width, height, nu, nv, fr.beam)
+            if grid is None:
+                continue
+            mirror = [[(Vector((-q.x, q.y, q.z)), Vector((-n.x, n.y, n.z))) for q, n in row] for row in grid]
+            grids = []
+            for g in (grid, mirror):
+                pts = [q for row in g for q, _ in row]
+                pad = Vector((LIFT_PAD + 0.5 * height,) * 3)  # greebles stand off the surface: keep them clear
+                box = Box("decal", Vector(tuple(min(q[i] for q in pts) for i in range(3))) - pad,
+                          Vector(tuple(max(q[i] for q in pts) for i in range(3))) + pad)
+                if any(box.overlaps(b) for b in taken):
+                    break
+                grids.append((g, box))
+            if len(grids) != 2:
+                continue
+            cost = sum(2 * (nu * nv * 2 + 2 * (nu + nv)) for _ in grids)
+            if tris(hull_bm) + tris(parts_bm) + cost > p["max_tris"] - 200:
+                break
+            for k, (g, box) in enumerate(grids):
+                decals.lay(hull_bm, g, mat, 0, uv, flip_u=k == 1)  # mirrored: still reads left to right
+                hull.obstacles.append(box)  # greebles keep off
+                taken.append(box)
+            placed = done = True
+            break
+        if not done and mat == DECAL_TEXT:
+            break  # no registration, no emblem
+    return text if placed else None
+
+
+LIFT_PAD = 0.05
+
+
+def _decal_materials(p, mats, text: str) -> dict:
+    hull_rgb = decals.paint_of(mats["hull"])[0]
+    accent_rgb = decals.paint_of(mats["accent"])[0]
+    emblem = decals.EMBLEM_OF.get(p["style"]["palette"], "ring")
+    img_t = decals.image(f"ShipGen_Decal_{text}", decals._text_mask(text), hull_rgb, decals.contrast(hull_rgb))
+    img_e = decals.image(f"ShipGen_Emblem_{emblem}", decals._emblem_mask(emblem), hull_rgb, accent_rgb)
+    return {"decal_text": decals.material("Decal_Text", img_t, mats["hull"]),
+            "decal_emblem": decals.material("Decal_Emblem", img_e, mats["hull"])}
 
 
 # ---------------------------------------------------------------- greebles

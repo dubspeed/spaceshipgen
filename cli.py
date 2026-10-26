@@ -71,6 +71,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--set", dest="overrides", action="append", type=parse_override, default=[],
                     metavar="KEY=VALUE", help="override a parameter, e.g. hull.length=20 (repeatable)")
     ap.add_argument("--no-glb", action="store_true")
+    ap.add_argument("--no-atlas", action="store_true",
+                    help=".glb with one material per paint instead of the palette atlas (one material per mesh)")
     ap.add_argument("--no-blend", action="store_true")
     ap.add_argument("--no-render", action="store_true")
     ap.add_argument("--views", default="three_quarter,top",
@@ -165,6 +167,7 @@ def run(args: argparse.Namespace) -> list[dict]:
             files = export.export_all(
                 ship, args.out, name, glb=not args.no_glb, blend=not args.no_blend,
                 views=views, resolution=(width, height), samples=args.samples, frame=args.frame,
+                atlas=not args.no_atlas,
             )
             stats = ship.stats() if callable(ship.stats) else ship.stats
             result = {"name": name, "seed": seed, "files": files, "stats": stats, "warnings": ship.warnings}

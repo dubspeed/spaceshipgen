@@ -1,7 +1,7 @@
 # Exportformat: Schiffe, Asteroiden, Wracks und Stationen
 
 Diese Beschreibung richtet sich an alle, die einen Importer für die ShipGen-Exporte schreiben
-(Godot oder eine andere Engine). Sie beschreibt Stand **Extension 0.4.0** (Baukasten-Builder
+(Godot oder eine andere Engine). Sie beschreibt Stand **Extension 0.5.0** (Baukasten-Builder
 `kit`, Standard für alle Presets). Alles hier ist aus echten Exporten nachgeprüft.
 
 Pro Objekt entstehen zwei Dateien mit gleichem Namen:
@@ -32,16 +32,39 @@ Die Kommandozeile benennt Schiffe `<preset>_<seed>` (z. B. `miner_s_101`), Aster
 
 ### Meshes und Materialien
 
-- Low Poly, flach schattiert: Vertex-Attribute nur `POSITION` und `NORMAL` (keine UVs, keine
+- Low Poly, flach schattiert: Vertex-Attribute `POSITION`, `NORMAL`, `TEXCOORD_0` (keine
   Vertex-Farben, keine Tangenten).
-- Ein Mesh hat **ein Primitive pro verwendetem Material**.
 - Jedes sichtbare Teil ist geschlossen (manifold); ein Teil kann aus mehreren
   überlappenden geschlossenen Körpern bestehen (z. B. Tank = zwei Kugeln + Halterung).
-- Materialien sind reine PBR-Faktoren (`baseColorFactor`, `metallicFactor`,
-  `roughnessFactor`), alle `doubleSided: true`, keine Texturen. Glühen über `emissiveFactor`
-  + `KHR_materials_emissive_strength`.
-- **Materialien über den Namen zuordnen, nicht über den Index** – die Reihenfolge im
-  `materials`-Array ändert sich von Datei zu Datei. Alle Namen beginnen mit `ShipGen_`.
+- **Ein Material für alles: `ShipGen_Atlas`** (Paletten-Atlas, ein Primitive pro Mesh, ein
+  Draw Call pro Teil). Jede „Farbe“ (Rumpflack, Metall, Glow …) ist eine Zelle von 8 × 8
+  Pixeln in drei kleinen Texturen; die UVs jeder Fläche zeigen in ihre Zelle:
+  - `baseColorTexture` (`ShipGen_Atlas_Color`, sRGB),
+  - `metallicRoughnessTexture` (`ShipGen_Atlas_MR`, G = Roughness, B = Metallic),
+  - `emissiveTexture` (`ShipGen_Atlas_Emit`) mit `KHR_materials_emissive_strength` –
+    leuchtend sind nur die Glow-Zellen.
+  Sampler `NEAREST` (keine Unschärfe zwischen den Zellen); in Godot Texturfilter „Nearest“
+  lassen. Unter den Farbzellen liegen die Decal-Bilder (Abschnitt „Decals“). `doubleSided: true`.
+- Ein Atlas gilt pro Datei (alle Teile teilen ihn); verschiedene Dateien haben eigene Atlanten.
+- Die in den folgenden Abschnitten genannten Materialnamen (`ShipGen_Hull`, `ShipGen_Glow` …)
+  sind die Farben **in Blender** – mit `cli.py --no-atlas` stehen sie stattdessen als einzelne
+  Materialien (reine PBR-Faktoren, ein Primitive pro Material) in der `.glb`; dann über den
+  Namen zuordnen, nicht über den Index.
+
+### Decals
+
+Kennung und Firmen-Emblem (Schiffe: beide Flanken; Stationen: Habitat, Raffinerie, Tank) und
+Warnstreifen (Pier-Köpfe der Andockarme) sind **Geometrie**: dünne geschlossene Platten
+(2,5 cm über der Oberfläche), deren Oberseite ein Pixelbild im Atlas zeigt. Der Hintergrund
+der Bilder ist der Lack darunter – keine Transparenz nötig, Wracks schneiden sie mit dem Rumpf.
+
+- Kennung: Schiff `<Klasse>-<Seed mod 1000>` (z. B. `MN-102`, Klassen `MN` `FR` `SH` `FT` `IC`
+  `CV`), Station `<Rolle>-<Seed>` (`OP`, `MI`, `TR`, z. B. `MI-002`). 5 × 7-Pixelschrift.
+- Emblem: gehört zum Farbschema (`style.palette` = Firma): `industrial_yellow` Winkel,
+  `military_grey` Stern, `white_red` Ring, `desert` Dreieck, `navy` Raute, `black_gold`
+  Krone, `rust` Zahnrad.
+- Abschaltbar mit `style.decals = false` (Schiffe). Kleine Schiffe (Jäger) haben meist keinen
+  Platz dafür.
 
 ### Collision-Shapes
 
@@ -139,12 +162,15 @@ Sockel ist belegt; freie Sockel kann das Spiel z. B. für Nachrüstungen nutzen.
 
 ### Materialien (Schiff)
 
+Farben in Blender bzw. mit `--no-atlas` (sonst Zellen von `ShipGen_Atlas`):
+
 | Name | Verwendung |
 |---|---|
 | `ShipGen_Hull` | Rumpflack (Rumpf, Flügel) |
 | `ShipGen_Accent` | Metallteile (Triebwerke, Rigs, Modul-Rahmen, Greebles) |
 | `ShipGen_Cargo` | Container-/Tankflächen |
 | `ShipGen_Glow` | Leuchtend: Düsen, Fenster der Brücke, Habitat-Fensterbänder. Die Glow-Fläche der Triebwerke ist die Austrittsfläche (für Flammen-Effekte) |
+| `ShipGen_Decal_Text`, `ShipGen_Decal_Emblem` | Oberseiten der Decal-Platten (Bild, sonst Rumpflack) |
 
 ### Gesamtwerte: `Ship.extras.shipgen`
 
@@ -456,7 +482,8 @@ unter `stats.modules` die `station_module`-Daten aller Designs.
 ### Materialien (Station)
 
 `ShipGen_Hull`, `ShipGen_Accent`, `ShipGen_Cargo`, `ShipGen_Glow` (Fenster, Lichter) wie beim
-Schiff (Palette aus `style`), dazu `ShipGen_Solar` (Solarpaneele).
+Schiff (Palette aus `style`), dazu `ShipGen_Solar` (Solarpaneele) und die Decals
+`ShipGen_DecalText`, `ShipGen_DecalEmblem`, `ShipGen_DecalStripes`.
 
 ### `<name>.json` (Station)
 
@@ -506,7 +533,8 @@ Godot-Hilfsskript: [`godot/shipgen_fx.gd`](../godot/shipgen_fx.gd) (`ShipGenFx.a
 
 - [ ] Achsen übernehmen (glTF = Godot), keine Umrechnung nötig.
 - [ ] Knoten mit Suffix `-convcolonly` als konvexe Collision-Shapes behandeln, nicht rendern.
-- [ ] Materialien über den Namen (`ShipGen_*`) zuordnen, nicht über den Index.
+- [ ] Ein Material `ShipGen_Atlas` übernehmen, Texturfilter „Nearest“; nur mit `--no-atlas`
+      Materialien über den Namen (`ShipGen_*`) zuordnen, nicht über den Index.
 - [ ] Schiff: Teile über `extras.shipgen_part` finden (Rolle, Art, Design, Sockel);
       Gesamtwerte aus `Ship.extras.shipgen` oder der `.json`.
 - [ ] Schiff: Teile drehen/animieren um ihren eigenen Ursprung (= Sockel); Effekte an

@@ -115,6 +115,8 @@ same class, mining and cargo type share the seed streams).
   out stations (spine of hubs, symmetric arm chains per role) and builds the kit (`build_kit`).
   Rng draws must never depend on set order (BMesh element hashes are addresses).
   Presets in `presets/stations/`.
+- `shipgen/atlas.py` – palette atlas at export (one `ShipGen_Atlas` material per mesh);
+  `shipgen/decals.py` – 5x7 pixel font, company emblems by palette, decal slabs.
 - `shipgen/fx.py` – FX anchors (empties with `shipgen_fx` extras, local +Y = emission
   direction, name contains `FX_<kind>_`) that every generator adds; the game owns the particle
   effects (`godot/shipgen_fx.gd` attaches them). FX draws use their own rng stream so they never
@@ -156,7 +158,13 @@ same class, mining and cargo type share the seed streams).
   shell inside out (wrong lighting, negative volume).
 - Everything a ship creates lives in the `ShipGen` collection under the `Ship` empty;
   materials are prefixed `ShipGen_`. `generate()` replaces the previous ship.
-- Materials: plain Principled values only (no linked textures), so the glTF matches.
+- Materials in Blender: plain Principled values per paint (stats read them: glow area = thrust,
+  cargo shells), no linked textures except decal images. The .glb gets one material per mesh:
+  `atlas.baked` turns every paint into an 8 px cell of a palette atlas at export time (UVs into
+  the cell, NEAREST sampling; `--no-atlas` exports the paints). Atlas/decal pixels are sRGB.
+- Decals (`decals.py`) are geometry: thin closed slabs laid onto the surface by ray casts, top
+  face textured, background = the paint underneath (no alpha); ship decals are projected on the
+  starboard flank and mirrored (exact symmetry), greebles keep off them.
 - The export format (node names, extras, materials, asteroid levels) is specified for importer
   authors in `docs/export_format.md`: update it whenever the .glb/.json structure changes.
 - `output/` and `dist/` are git-ignored. Commit presets and, occasionally, the docs sheets

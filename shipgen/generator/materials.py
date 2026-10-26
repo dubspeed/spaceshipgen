@@ -55,6 +55,10 @@ def create_materials(params: dict) -> dict[str, bpy.types.Material]:
 
 
 def remove_materials() -> None:
+    """Unused ShipGen materials, then the decal images only they used."""
     for mat in list(bpy.data.materials):
         if mat.name.startswith(MATERIAL_PREFIX) and mat.users == 0:
             bpy.data.materials.remove(mat)
+    for img in list(bpy.data.images):
+        if img.name.startswith(MATERIAL_PREFIX) and img.users == 0:
+            bpy.data.images.remove(img)

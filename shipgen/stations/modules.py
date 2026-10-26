@@ -13,7 +13,8 @@ Contract (every design):
   (+Z), plus the largest ship length that fits.
 - Closed convex primitives; each one is also a convex collider piece (thin details excepted).
 
-Materials: 0 hull, 1 accent, 2 glow, 3 cargo, 4 solar.
+Materials: 0 hull, 1 accent, 2 glow, 3 cargo, 4 solar, 5-7 decals (station code, company
+emblem, hazard stripes; laid onto the finished module, see ``Builder.decal``).
 """
 
 from __future__ import annotations
@@ -29,7 +30,8 @@ GRID = 16.0  # metres per cell
 PORT_RADIUS = 0.2 * GRID
 COLLAR = 0.07 * GRID  # depth of a port's flange collar
 NECK = 0.16 * GRID  # short tube from the collar into the module
-HULL, ACCENT, GLOW, CARGO, SOLAR = range(5)
+HULL, ACCENT, GLOW, CARGO, SOLAR, DECAL_TEXT, DECAL_EMBLEM, DECAL_STRIPES = range(8)
+TEXT_ASPECT = 39 / 11  # the station code ("MI-002": 6 characters of the 5x7 font, see decals.py)
 H = 0.5 * GRID
 
 # berth sizes: largest ship length, half beam and half height (shop models: S <= 20 m, ...).
@@ -63,6 +65,7 @@ class Module:
     berths: list[Berth] = field(default_factory=list)
     pieces: list[list[Vector]] = field(default_factory=list)  # convex collider point sets
     fx: list = field(default_factory=list)  # FX anchors: (kind, pos, direction, size, extras)
+    decals: list = field(default_factory=list)  # (slot, centre, normal, width, height, nu, nv)
 
 
 class Builder:
@@ -92,6 +95,10 @@ class Builder:
         before = set(self.bm.verts)
         shapes.beam(self.bm, Vector(a), Vector(b), w, h, material, up=up)
         self._track(before, collide)
+
+    def decal(self, slot, centre, normal, width, height, nu=3, nv=2):
+        """Laid onto the finished module by ``build`` (up = +Z, or +Y on up/down faces)."""
+        self.m.decals.append((slot, Vector(centre), Vector(normal), width, height, nu, nv))
 
     def fx(self, kind, pos, direction, size, **extra):
         self.m.fx.append((kind, Vector(pos), Vector(direction), size, extra))
@@ -178,6 +185,9 @@ def habitat(b: Builder, v: int):
         for t in (0.3, 0.7):
             y = y0 + t * (y1 - y0)
             b.loft((0, y - 0.6, 0), Y, [(0, r * 1.02), (1.2, r * 1.02)], sides=sides, material=GLOW, collide=False)
+        mid, h = 0.5 * (y0 + y1), 0.1 * GRID
+        b.decal(DECAL_TEXT, (r, mid, 0), X, TEXT_ASPECT * h, h, nu=6)
+        b.decal(DECAL_EMBLEM, (-r, mid, 0), -X, 2 * h, 2 * h, nu=3, nv=3)
     else:  # three pods around a spine
         b.loft((0, y0, 0), Y, [(0, 0.16 * GRID), (y1 - y0, 0.16 * GRID)], sides=8)
         for k in range(3):
@@ -261,6 +271,8 @@ def tank(b: Builder, v: int):
         b.loft(Y * (y0 + 0.5), Y, [(0, 0.5 * r), (0.2 * length, r), (0.8 * length, r), (length, 0.5 * r)], sides=10,
                material=CARGO)
         b.fx("vent", (0, 0, r), Z, 0.15 * r)
+        for x in (-1, 1):
+            b.decal(DECAL_EMBLEM, (x * r, y0 + 0.5 + 0.5 * length, 0), X * x, 0.3 * GRID, 0.3 * GRID, nu=3, nv=3)
     for cell, d in m.ports:
         b.port(cell, d)
 
@@ -280,8 +292,10 @@ def refinery(b: Builder, v: int):
         b.loft((x * GRID, y, 0.42 * GRID), Z, [(0, 0.065 * GRID), (0.04 * GRID, 0.065 * GRID)], sides=6, material=GLOW,
                collide=False)
         b.fx("vent", (x * GRID, y, 0.46 * GRID), Z, 0.065 * GRID)  # exhaust of the stack
-    for x in (-1, 1):  # furnace windows
+    for x in (-1, 1):  # furnace windows, the station code above them
         b.box((x * w - 0.2, y0 + 0.15 * GRID, -0.1 * GRID), (x * w + 0.2, y1 - 0.15 * GRID, 0.0), GLOW, collide=False)
+        b.decal(DECAL_TEXT, (x * w, 0.5 * (y0 + y1), 0.12 * GRID), X * x, TEXT_ASPECT * 0.12 * GRID, 0.12 * GRID,
+                nu=6)
     for cell, d in m.ports:
         b.port(cell, d)
 
@@ -297,6 +311,9 @@ def _dock(b: Builder, v: int, size: str, n_cells: int):
     for x in (-pier, pier):  # walkway rails
         b.box((x - 0.3, y0, pier), (x + 0.3, y1, pier + 0.5), ACCENT, collide=False)
     b.box((-pier * 1.6, y1 - 0.15 * GRID, -pier * 1.6), (pier * 1.6, y1 + 0.3, pier * 1.6), ACCENT)
+    for x in (-1, 1):  # hazard stripes on the pier head
+        b.decal(DECAL_STRIPES, (x * pier * 1.6, y1 - 0.075 * GRID + 0.15, 0), X * x, 0.12 * GRID, 0.25 * GRID,
+                nu=2, nv=2)
     b.box((-0.6, y1 + 0.3, -0.6), (0.6, y1 + 0.06 * GRID, 0.6), GLOW, collide=False)  # beacon
     b.fx("beacon", (0, y1 + 0.06 * GRID, 0), Y, 0.6)
     offset = H + BERTH_GAP + half_beam
@@ -431,4 +448,15 @@ def build(bm, kind: str, design: int) -> Module:
     fn, count = DESIGNS[kind]
     m = Module(kind, design % count, [], [])
     fn(Builder(bm, m), design % count)
+    if m.decals:  # laid onto the finished geometry
+        from .. import decals, meshutil
+
+        meshutil.orient_outward(bm)  # the ray casts read the face normals
+        uv = bm.loops.layers.uv.get("UVMap") or bm.loops.layers.uv.new("UVMap")
+        surface = decals.Surface(bm)
+        for slot, centre, normal, width, height, nu, nv in m.decals:
+            up = Y if abs(normal.z) > 0.9 else Z
+            grid = surface.project(centre, normal, up, width, height, nu, nv, 0.2 * GRID)
+            if grid is not None:
+                decals.lay(bm, grid, slot, HULL, uv)
     return m

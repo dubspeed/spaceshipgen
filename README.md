@@ -160,6 +160,13 @@ direkt importieren. Sie enthält:
   für ein fliegendes Schiff die `CollisionShape3D`-Kinder unter den eigenen `RigidBody3D` /
   `CharacterBody3D` hängen (von Hand oder per Import-Skript).
 
+- **Ein Material pro Teil:** `ShipGen_Atlas`, ein winziger Paletten-Atlas (Farbe,
+  Metall/Rauheit, Glow) – jede Fläche zeigt per UV auf ihre Farbzelle, also ein Draw Call pro
+  Teil. Texturfilter in Godot auf „Nearest“ lassen. (`--no-atlas` exportiert wie früher ein
+  Material pro Farbe.)
+- **Decals:** Kennung (z. B. `MN-102`) und Firmen-Emblem (je Farbschema) an den Flanken,
+  bei Stationen Kennung, Emblem und Warnstreifen an den Pier-Köpfen – als dünne Platten in
+  der Geometrie, ohne Transparenz.
 - **FX-Anker:** leere Nodes `FX_<art>_<i>` für Partikel und Lichter – Düsenstrahl, Steuerdüsen,
   Bohrkopf, Positionslichter; bei Wracks Funken/Rauch, bei Stationen Leuchtfeuer,
   Liegeplatz-Lichter, Abgas. −Z = Emissionsrichtung. Die Effekte baust du in Godot;

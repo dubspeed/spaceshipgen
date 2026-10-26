@@ -27,7 +27,7 @@ import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
-from .. import fx, meshutil
+from .. import decals, fx, meshutil
 from ..generator import Ship
 from ..generator import clear as _clear
 from ..generator.materials import _principled, create_materials
@@ -63,6 +63,7 @@ ROLES = {
                   top=["command", "antenna"], bottom=["solar", "dock_m", "radiator"]),
 }
 HUBS = {"small": 1, "medium": 2, "large": 3}
+ROLE_CODE = {"outpost": "OP", "mining": "MI", "trade": "TR"}
 
 
 def _rotations() -> list[Matrix]:
@@ -258,6 +259,19 @@ def _materials(p) -> dict:
     mats = create_materials({"style": {"palette": style["palette"], "wear": style["wear"]},
                              "engines": {"glow_color": style["glow_color"]}})
     mats["solar"] = _principled("Solar", (0.03, 0.06, 0.16), 0.7, 0.25)
+    # decals: the station's code, the company emblem (by paint scheme), hazard stripes
+    hull = decals.paint_of(mats["hull"])[0]
+    accent = decals.paint_of(mats["accent"])[0]
+    text = f"{ROLE_CODE[p['role']]}-{p['seed'] % 1000:03d}"
+    emblem = decals.EMBLEM_OF.get(style["palette"], "ring")
+    stripes = [[(x + y) // 4 % 2 == 0 for x in range(16)] for y in range(16)]
+    for key, img in (("decal_text", decals.image(f"ShipGen_Decal_{text}", decals._text_mask(text), hull,
+                                                   decals.contrast(hull))),
+                     ("decal_emblem", decals.image(f"ShipGen_Emblem_{emblem}", decals._emblem_mask(emblem), hull,
+                                                     accent)),
+                     ("decal_stripes", decals.image("ShipGen_Stripes", stripes, (0.02, 0.02, 0.02), (0.8, 0.55, 0.02)))):
+        mats[key] = decals.material(key.title().replace("_", ""), img, mats["accent"] if key == "decal_stripes"
+                                    else mats["hull"])
     return mats
 
 
@@ -269,7 +283,7 @@ def _module_object(pl: Placement, name: str, coll, parent, mats, matrix: Matrix)
     mesh = bpy.data.meshes.new(name)
     bm.to_mesh(mesh)
     bm.free()
-    for key in ("hull", "accent", "glow", "cargo", "solar"):
+    for key in ("hull", "accent", "glow", "cargo", "solar", "decal_text", "decal_emblem", "decal_stripes"):
         mesh.materials.append(mats[key])
     for poly in mesh.polygons:
         poly.use_smooth = False
