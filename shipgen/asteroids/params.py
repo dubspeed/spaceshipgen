@@ -22,7 +22,7 @@ SCHEMA: dict[str, Any] = {
     "max_levels": Field(int, 4, 1, 6, description="Break levels prepared in advance"),
     "richness": Field(float, 0.6, 0.0, 1.0, description="Share of chunks that carry the resource (rest is plain rock)"),
     "roughness": Field(float, 0.5, 0.0, 1.0, description="Breaks the flat facets: bumps and dents (0 = clean facets)"),
-    "craters": Field(int, 4, 0, 12, description="Craters on the surface"),
+    "craters": Field(int, 6, 0, 16, description="Craters on the surface"),
     "gap": Field(float, 0.03, 0.0, 0.15, description="Crack width between chunks: gap x size_m / 2"),
     "max_tris": Field(int, 30000, 500, 500000, description="Triangle budget for all levels together"),
 }

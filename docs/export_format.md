@@ -305,7 +305,7 @@ Taube Brocken (`resource: "rock"`) liefern 5 %.
 | Rolle | Verwendung |
 |---|---|
 | `surface` | Außenfläche |
-| `plain` | Bruchflächen tauber Brocken |
+| `plain` | Bruchflächen tauber Brocken, Kraterböden |
 | `resource` | Bruchflächen und Adern erzhaltiger Brocken (zeigt den Rohstoff) |
 
 Es stehen nur die Materialien in der Datei, die vorkommen (z. B. fehlt `plain`, wenn alle

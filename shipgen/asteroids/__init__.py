@@ -92,15 +92,19 @@ def generate(raw_params: dict) -> Asteroid:
     result = params_mod.validate(raw_params)
     p = result.params
     warnings = list(result.warnings)
-    levels = p["max_levels"]
+    levels, coarse = p["max_levels"], 1.0
     while True:
-        tree, fractures, surf = _fracture(p, levels)
+        tree, fractures, surf = _fracture(p, levels, coarse)
         rock = _build_objects(p, tree, fractures, surf)
         tris = sum(len(poly.vertices) - 2 for c in rock.chunks for poly in c.obj.data.polygons)
-        if tris <= p["max_tris"] or levels == 1:
+        if tris <= p["max_tris"] or coarse >= MAX_COARSE:
             break
-        levels -= 1
-        warnings.append(f"max_levels reduced to {levels} to stay within max_tris ({tris} tris)")
+        if levels > 1:  # first fewer break levels, then bigger surface triangles
+            levels -= 1
+            warnings.append(f"max_levels reduced to {levels} to stay within max_tris ({tris} tris)")
+        else:
+            coarse *= 1.5
+            warnings.append(f"surface coarsened (x{coarse:.2f}) to stay within max_tris ({tris} tris)")
     rock.warnings = warnings
     return rock
 
@@ -134,11 +138,14 @@ def _base_pieces(p, rng) -> list[list[Vector]]:
     return [[(rot @ q) * scale for q in piece] for piece in pieces]
 
 
-def _fracture(p, levels: int):
+MAX_COARSE = 5.0
+
+
+def _fracture(p, levels: int, coarse: float = 1.0):
     """Chunk tree, every fracture plane (break faces lie on one of them) and the rock surface."""
     rng = random.Random(f"{p['seed']}:{p['composition']}:asteroid")
     pieces = _base_pieces(p, rng)
-    surf = surface_mod.make_surface(p, pieces, random.Random(f"{p['seed']}:{p['composition']}:surface"))
+    surf = surface_mod.make_surface(p, pieces, random.Random(f"{p['seed']}:{p['composition']}:surface"), coarse)
     fractures: list[tuple[Vector, float]] = []
     total = sum(geo.volume(pc) for pc in pieces)
     top: list[Chunk] = []
@@ -230,7 +237,7 @@ def _build_objects(p, tree: list[Chunk], fractures, surf) -> Asteroid:
             else:
                 f.material_index = 2 if chunk.rich and rng.random() < VEIN_SHARE else 0
         if p["roughness"] > 0 or p["craters"]:
-            surface_mod.roughen(bm, surf, 0.18 * geo.diameter(pts))
+            surface_mod.roughen(bm, surf, 0.18 * geo.diameter(pts), floor_material=1)
         c = geo.centroid([v.co for v in bm.verts])
         for v in bm.verts:
             v.co -= c

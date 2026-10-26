@@ -25,11 +25,16 @@ und mit **Show Level** die vorgebrochenen Ebenen im Viewport.
   zwei Hälften, an einer Ebene getrennt (Taille). Low Poly, flach schattiert.
 - **Vorgebrochen:** Voronoi-Zerlegung in konvexe Brocken (`chunks`), große Brocken zerfallen
   weiter (`sub_chunks`), bis unter etwa 2 × `min_chunk_m` oder `max_levels`. Knappe
-  `max_tris` nehmen Ebenen weg (mit Warnung).
+  `max_tris` nehmen erst Ebenen weg, dann werden die Oberflächen-Dreiecke größer (je mit
+  Warnung).
 - **Raue Oberfläche** (`surface.py`, `roughness`, `craters`): die Außenflächen jedes Brockens
   werden in kleinere Dreiecke geteilt und per Rauschen (zwei Oktaven + kleines Zittern) und
   Kratern verschoben. Das Rauschen hängt nur von der Weltposition ab: Nachbarn und
   Unterbrocken haben an derselben Stelle dieselbe Oberfläche. Bruchflächen bleiben glatt.
+- **Krater** (`craters`, Standard 6, Radius 8–17 % der Größe): flacher Boden, steile Wand,
+  erhöhter Rand; um Krater herum ist die Oberfläche feiner unterteilt und der Boden ruhiger
+  (weniger Rauschen), damit die Schüssel lesbar ist. Kraterböden zeigen frisches Gestein
+  (Material `plain`), außer wo eine Ader liegt.
 - **Collider:** jeder Brocken hat ein Kind `<Name>_col-convcolonly` = konvexe Hülle seiner
   Punkte (Godot: unsichtbare konvexe Collision-Shape), das sichtbare Mesh liegt komplett darin.
 - **Lesbarkeit:** feine Risse zwischen den Brocken (`gap`). Erzhaltige Brocken haben
