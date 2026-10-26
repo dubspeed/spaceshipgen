@@ -10,12 +10,15 @@ from ..params import PALETTES, Field
 ROLES = ("outpost", "mining", "trade")
 SIZES = ("small", "medium", "large")
 SYMMETRIES = ("two", "four")
+BUILDS = ("truss", "massive")
 
 SCHEMA: dict[str, Any] = {
     "seed": Field(int, 1, 0, 2**31 - 1, description="Random seed: layout choices and module designs"),
     "role": Field(str, "mining", choices=ROLES, description="What the station is for: decides the module mix"),
     "size": Field(str, "medium", choices=SIZES, description="Hubs on the central spine: 1, 2 or 3"),
     "symmetry": Field(str, "four", choices=SYMMETRIES, description="Arms per hub: two (opposite) or four"),
+    "build": Field(str, "truss", choices=BUILDS,
+                   description="truss = slim hubs and piers; massive = 48 m cores, thick halls, heavy docks"),
     "style": {
         "palette": Field(str, "white_red", choices=PALETTES, description="Paint scheme (shared with the ships)"),
         "wear": Field(float, 0.3, 0.0, 1.0, description="Dull, rough paint"),

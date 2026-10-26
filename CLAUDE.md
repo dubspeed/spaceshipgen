@@ -113,6 +113,8 @@ same class, mining and cargo type share the seed streams).
   `modules.py` holds the grid contract (16 m cells, ports on cell faces, port 0 on -Y of cell 0,
   reserved berth cells; `ModuleKitTest` checks every design) and the designs; `__init__.py` lays
   out stations (spine of hubs, symmetric arm chains per role) and builds the kit (`build_kit`).
+  `build`: `truss` (slim) or `massive` (`modules.MASSIVE`: 3x3x3 `core` nodes, cell-filling
+  modules, heavy docks); massive kinds draw designs from their own rng stream.
   Rng draws must never depend on set order (BMesh element hashes are addresses).
   Presets in `presets/stations/`.
 - `shipgen/atlas.py` – palette atlas at export (one `ShipGen_Atlas` material per mesh);

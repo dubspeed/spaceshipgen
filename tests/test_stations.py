@@ -72,12 +72,12 @@ class StationTest(unittest.TestCase):
     def test_roles_and_sizes(self):
         from shipgen.stations import params
 
-        for role, size, sym in itertools.product(params.ROLES, params.SIZES, params.SYMMETRIES):
-            with self.subTest(role=role, size=size, symmetry=sym):
-                st = self.stations.generate({"seed": 3, "role": role, "size": size, "symmetry": sym})
+        for role, size, sym, build in itertools.product(params.ROLES, params.SIZES, params.SYMMETRIES, params.BUILDS):
+            with self.subTest(role=role, size=size, symmetry=sym, build=build):
+                st = self.stations.generate({"seed": 3, "role": role, "size": size, "symmetry": sym, "build": build})
                 self.check_layout(st.placements)
                 self.assertGreater(sum(st.stats["berths"].values()), 0)
-                hubs = sum(1 for pl in st.placements if pl.kind == "hub")
+                hubs = sum(1 for pl in st.placements if pl.kind == ("core" if build == "massive" else "hub"))
                 self.assertEqual(hubs, {"small": 1, "medium": 2, "large": 3}[size])
                 names = [o.name for o in st.objects]
                 self.assertEqual(len(names), len(set(names)))
@@ -106,6 +106,13 @@ class StationTest(unittest.TestCase):
         kit = self.stations.build_kit({})
         self.assertEqual(len(kit.parts), sum(n for _, n in modules.DESIGNS.values()))
         self.assertTrue(all(any(c.name.endswith("-convcolonly") for c in o.children) for o in kit.parts))
+
+    def test_truss_layouts_unchanged_by_the_massive_kinds(self):
+        """The massive kinds draw from their own stream: truss stations stay what they were."""
+        st = self.stations.generate({"seed": 2, "role": "mining", "size": "medium", "symmetry": "two"})
+        self.assertEqual([pl.name for pl in st.placements][:6],
+                         ["Hub_0", "Silo_0", "Hub_1", "Silo_1", "Silo_2", "DockL_0"])
+        self.assertFalse(any(pl.kind in ("core", "hall", "smelter") for pl in st.placements))
 
     def test_deterministic(self):
         a = [(pl.kind, tuple(pl.origin)) for pl in self.stations.generate({"seed": 9, "size": "large"}).placements]

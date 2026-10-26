@@ -46,6 +46,13 @@ In Blender: Seitenleiste (N) → **ShipGen** → Bereich **Stations**: **Generat
 | `radiator` | 3 hoch | 1 | Kühlung (`cooling_kw`) |
 | `antenna` | 1 | 1 | Antenne / Schüssel |
 | `command` | 1 | 1 | Kommandomodul (`crew`) |
+| **massiv:** | | | |
+| `core` | 3 × 3 × 3 | 6 (Seitenmitten) | 48-m-Kern statt Hub (`crew`), Panzerung, Fensterdecks |
+| `bulkhead` | 1 | 2 | dickes Verbindungssegment |
+| `hall` | 2 | 2 | Lagerhalle, füllt die Zellen (`general_m3`) |
+| `smelter` | 2 | 2 | Schmelzwerk (`refine_m3_h`) |
+| `quarters` | 2 | 2 | Mannschaftsquartiere (`crew`) |
+| `dock_heavy_s/m/l` | 1 / 2 / 4 | 1 | schwerer Pier mit Sockelblock und Streben (`berths`) |
 
 Jede Art hat 2–3 Designs (gleicher Vertrag, anderes Aussehen). Werte kommen wie bei den
 Schiffen aus der Geometrie (Volumen der Ladungs-Körper, Paneelfläche ...).
@@ -67,10 +74,20 @@ Zeilen: Außenposten, Mining, Handel; Spalten: small, medium, large.
   waagrechte Liegeplätze, dann gedrehte.
 - **Enden:** oben Kommando/Antenne, unten Kühler/Tank/Solar/Andockarm.
 
+### Massiv (`build = massive`)
+
+![Massive Stationen](stations_massive.png)
+
+Dasselbe Layout-Prinzip, aber mit 3 × 3 × 3-Kernen (48 m) statt Hubs, Modulen, die ihre Zellen
+füllen (Halle, Schmelzwerk, Quartiere, Schott), und schweren Andockarmen. Gleiches Raster und
+gleiche Ports wie der schlanke Stil (`truss`, Standard) – beide Baukästen lassen sich mischen.
+Die schlanken Stationen bleiben für jeden Seed genau wie bisher (die massiven Module ziehen ihre
+Zufallszahlen aus einem eigenen Strom). Presets: `mining_m_massive`, `trade_l_massive`.
+
 ![Angedockt](docked.png)
 
 Zum Größenvergleich liegen hier Shop-Schiffe an den Liegeplätzen (`hauler_s`, `miner_m`,
-`hauler_l`; nur im Demo-Bild, nicht im Export).
+`hauler_l`; nur im Demo-Bild, nicht im Export). Oben schlank, unten massiv.
 
 ## Offen
 

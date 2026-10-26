@@ -62,6 +62,24 @@ ROLES = {
                   docks=[["storage", "dock_l"], ["storage", "dock_m"], ["habitat", "dock_m"]],
                   top=["command", "antenna"], bottom=["solar", "dock_m", "radiator"]),
 }
+# the massive look: 3x3x3 cores instead of hubs, modules that fill their cells, heavy docks
+ROLES_MASSIVE = {
+    "outpost": dict(core=["quarters", "hall"],
+                    arms=[["dock_heavy_s"], ["solar"], ["quarters", "dock_heavy_s"], ["bulkhead", "dock_heavy_m"],
+                          ["radiator"]],
+                    docks=[["dock_heavy_s"], ["quarters", "dock_heavy_s"], ["bulkhead", "dock_heavy_m"]],
+                    top=["antenna", "command"], bottom=["solar", "radiator", "tank"]),
+    "mining": dict(core=["smelter", "silo", "hall"],
+                   arms=[["smelter", "dock_heavy_l"], ["bulkhead", "dock_heavy_m"], ["silo", "dock_heavy_m"],
+                         ["solar"], ["radiator"], ["smelter", "bulkhead"]],
+                   docks=[["smelter", "dock_heavy_l"], ["bulkhead", "dock_heavy_l"], ["silo", "dock_heavy_m"]],
+                   top=["command", "antenna"], bottom=["radiator", "tank", "dock_heavy_l"]),
+    "trade": dict(core=["hall", "quarters", "hall"],
+                  arms=[["hall", "dock_heavy_l"], ["dock_heavy_m"], ["bulkhead", "dock_heavy_s"],
+                        ["quarters", "dock_heavy_m"], ["hall", "dock_heavy_m"], ["solar"]],
+                  docks=[["hall", "dock_heavy_l"], ["hall", "dock_heavy_m"], ["quarters", "dock_heavy_m"]],
+                  top=["command", "antenna"], bottom=["solar", "dock_heavy_m", "radiator"]),
+}
 HUBS = {"small": 1, "medium": 2, "large": 3}
 ROLE_CODE = {"outpost": "OP", "mining": "MI", "trade": "TR"}
 
@@ -213,21 +231,31 @@ class _Layout:
 
 def _layout(p) -> list[Placement]:
     rng = random.Random(f"{p['seed']}:{p['role']}:station")
-    role = ROLES[p["role"]]
-    designs = {kind: rng.randrange(modules.DESIGNS[kind][1]) for kind in KINDS}
+    massive = p["build"] == "massive"
+    role = (ROLES_MASSIVE if massive else ROLES)[p["role"]]
+    # the slim kinds draw from the main stream exactly as before the massive kinds existed
+    designs = {kind: rng.randrange(modules.DESIGNS[kind][1]) for kind in KINDS if kind not in modules.MASSIVE}
+    extra = random.Random(f"{p['seed']}:{p['role']}:massive")
+    designs.update({kind: extra.randrange(modules.DESIGNS[kind][1]) for kind in modules.MASSIVE})
     lay = _Layout(designs)
     up = Vector((0, 0, 1))
-    # spine: hubs with a core module between them, along +Z
-    first = Placement("hub", designs["hub"], Matrix.Identity(3), Vector((0, 0, 0)), contract("hub", designs["hub"]))
+    node = "core" if massive else "hub"  # the spine's nodes: 6 ports, axis-aligned with the first one
+
+    def node_at(port_cell, direction) -> Placement:
+        """A node whose port facing -direction meets the port at ``port_cell``."""
+        c = contract(node, designs[node])
+        own = next(cell for cell, d in c.ports if Vector(d) == -direction)
+        return Placement(node, designs[node], Matrix.Identity(3),
+                         Vector(port_cell) + direction - Vector(own), c)
+
+    first = Placement(node, designs[node], Matrix.Identity(3), Vector((0, 0, 0)), contract(node, designs[node]))
     lay.add(first)
     hubs = [first]
     for _ in range(HUBS[p["size"]] - 1):
         below = hubs[-1]
         port = lay.port_towards(below, up)
         core = lay.candidate(rng.choice(role["core"]), below, port, Vector((1, 0, 0)))
-        # a hub is a cube: it stays axis-aligned with the first one
-        hub = Placement("hub", designs["hub"], Matrix.Identity(3), Vector(core.ports()[1][1]) + up,
-                        contract("hub", designs["hub"]))
+        hub = node_at(core.ports()[1][1], up)
         if not (lay.fits(core) and lay.fits(hub)):
             break
         lay.add(core, below, port)
@@ -342,15 +370,15 @@ def _module_stats(m: modules.Module, bm) -> dict:
     vol = meshutil.volume(bm)
     out = {"volume_m3": round(vol, 1), "mass_t": round(vol * DENSITY, 1)}
     cargo = by_mat.get(modules.CARGO, 0.0) * USABLE
-    if m.kind == "storage":
+    if m.kind in ("storage", "hall"):
         out["general_m3"] = round(cargo, 1)
     elif m.kind == "silo":
         out["ore_m3"] = round(cargo, 1)
     elif m.kind == "tank":
         out["fluid_m3"] = round(cargo, 1)
-    elif m.kind in ("habitat", "command"):
+    elif m.kind in ("habitat", "command", "quarters", "core"):
         out["crew"] = int(by_mat.get(modules.HULL, 0.0) // M3_PER_CREW)
-    elif m.kind == "refinery":
+    elif m.kind in ("refinery", "smelter"):
         out["refine_m3_h"] = round(vol * REFINE_PER_M3, 1)
     elif m.kind == "solar":
         area = sum(f.calc_area() for f in bm.faces if f.material_index == modules.SOLAR)
@@ -393,7 +421,8 @@ def generate(raw_params: dict) -> Station:
         empties += emps
     station = Station(root, parts, placements, p, list(result.warnings), colliders, empties)
     station.stats = _stats(parts, empties)
-    root["shipgen_station"] = {"seed": p["seed"], "role": p["role"], "size": p["size"], "grid_m": GRID,
+    root["shipgen_station"] = {"seed": p["seed"], "role": p["role"], "size": p["size"], "build": p["build"],
+                               "grid_m": GRID,
                                "stats": station.stats}
     return station
 

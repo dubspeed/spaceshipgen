@@ -438,7 +438,8 @@ Station                               extras.shipgen_station (Gesamtwerte)
 ```
 
 - **Modulnamen:** `<Art>_<n>` mit `Hub`, `Corridor`, `Habitat`, `Storage`, `Silo`, `Tank`,
-  `Refinery`, `DockS`, `DockM`, `DockL`, `Solar`, `Radiator`, `Antenna`, `Command`; im
+  `Refinery`, `DockS`, `DockM`, `DockL`, `Solar`, `Radiator`, `Antenna`, `Command`, massiv
+  `Core`, `Bulkhead`, `Hall`, `Smelter`, `Quarters`, `DockHeavyS`, `DockHeavyM`, `DockHeavyL`; im
   Baukasten `<Art>_v<design>` (z. B. `DockL_v1`).
 - **Modul-Ursprung** = Mitte seiner ersten Rasterzelle; Translation = Zelle × 16 m, Rotation
   um Vielfache von 90°. Lokale +Y-Achse (Godot −Z) = Hauptachse des Moduls.
@@ -467,7 +468,7 @@ Immer `volume_m3`, `mass_t`; je nach Art zusätzlich `general_m3` (storage), `or
 
 ```json
 {
-  "seed": 2, "role": "mining", "size": "medium", "grid_m": 16.0,
+  "seed": 2, "role": "mining", "size": "medium", "build": "truss", "grid_m": 16.0,
   "stats": {"modules": 19, "volume_m3": 22297.3, "mass_t": 2230.1,
             "general_m3": 0.0, "ore_m3": 4469.7, "fluid_m3": 0.0, "crew": 40,
             "refine_m3_h": 103.4, "power_kw": 243.6, "cooling_kw": 0.0,

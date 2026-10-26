@@ -4,7 +4,8 @@
 
 modules.png   every module design of the kit, one per tile
 stations.png  roles (rows: outpost, mining, trade) x sizes (columns: small, medium, large)
-docked.png    two stations with shop ships lying at their berths (scale check)
+stations_massive.png  the same with build = massive (3x3x3 cores, thick modules, heavy docks)
+docked.png    stations with shop ships lying at their berths (scale check; top truss, bottom massive)
 wrecks.png    wrecks of shop models (rows: miner_m, hauler_m, hauler_l; damage and breaks rise to the right)
 """
 
@@ -97,23 +98,26 @@ def main():
         sheet(os.path.join(args.out, "modules.png"), paths, 6)
 
     if "stations" in only:
-        paths = []
-        for role in ("outpost", "mining", "trade"):
-            for size, seed in (("small", 1), ("medium", 2), ("large", 3)):
-                st = stations.generate({"role": role, "size": size, "seed": seed,
-                                        "symmetry": "two" if seed == 2 else "four"})
-                print(role, size, st.stats["berths"], st.stats["modules"])
-                paths.append(render(st, os.path.join(tmp, f"{role}_{size}.png")))
-        sheet(os.path.join(args.out, "stations.png"), paths, 3)
+        for build, out in (("truss", "stations.png"), ("massive", "stations_massive.png")):
+            paths = []
+            for role in ("outpost", "mining", "trade"):
+                for size, seed in (("small", 1), ("medium", 2), ("large", 3)):
+                    st = stations.generate({"role": role, "size": size, "seed": seed, "build": build,
+                                            "symmetry": "two" if seed == 2 else "four"})
+                    print(build, role, size, st.stats["berths"], st.stats["modules"])
+                    paths.append(render(st, os.path.join(tmp, f"{build}_{role}_{size}.png")))
+            sheet(os.path.join(args.out, out), paths, 3)
 
     if "docked" in only:
         paths = []
         for params in ({"role": "mining", "size": "medium", "seed": 2, "symmetry": "two"},
-                       {"role": "trade", "size": "small", "seed": 4, "symmetry": "four"}):
+                       {"role": "trade", "size": "small", "seed": 4, "symmetry": "four"},
+                       {"role": "mining", "size": "medium", "seed": 2, "symmetry": "two", "build": "massive"},
+                       {"role": "trade", "size": "small", "seed": 4, "symmetry": "four", "build": "massive"}):
             st = stations.generate(params)
             ships = dock_ships(st)
-            paths.append(render(View(st.parts + ships), os.path.join(tmp, f"docked_{params['role']}.png"),
-                                res=(960, 640)))
+            name = f"docked_{params['role']}_{params.get('build', 'truss')}.png"
+            paths.append(render(View(st.parts + ships), os.path.join(tmp, name), res=(960, 640)))
             bpy.data.collections.remove(bpy.data.collections["Demo_Docked"])
         sheet(os.path.join(args.out, "docked.png"), paths, 2)
 

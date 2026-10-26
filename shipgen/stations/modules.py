@@ -103,12 +103,12 @@ class Builder:
     def fx(self, kind, pos, direction, size, **extra):
         self.m.fx.append((kind, Vector(pos), Vector(direction), size, extra))
 
-    def port(self, cell, direction):
+    def port(self, cell, direction, neck: float = NECK):
         """Flange collar ending on the cell face, plus a neck towards the cell centre."""
         c, d = Vector(cell) * GRID, Vector(direction)
         face = c + d * H
         self.loft(face - d * COLLAR, d, [(0.0, PORT_RADIUS), (COLLAR, PORT_RADIUS)], sides=8, material=ACCENT)
-        self.loft(face - d * (COLLAR + NECK), d, [(0.0, 0.7 * PORT_RADIUS), (NECK + 0.01, 0.7 * PORT_RADIUS)],
+        self.loft(face - d * (COLLAR + neck), d, [(0.0, 0.7 * PORT_RADIUS), (neck + 0.01, 0.7 * PORT_RADIUS)],
                   sides=8, material=HULL, collide=False)
         u = d.orthogonal().normalized()
         for k in (1, -1):  # two docking lights on the rim
@@ -300,14 +300,21 @@ def refinery(b: Builder, v: int):
         b.port(cell, d)
 
 
-def _dock(b: Builder, v: int, size: str, n_cells: int):
+def _dock(b: Builder, v: int, size: str, n_cells: int, heavy: bool = False):
     m = b.m
     m.cells = [(0, k, 0) for k in range(n_cells)]
     m.ports = [IN]
     length, half_beam, half_height = BERTHS[size]
-    pier = 0.1 * GRID
+    pier = (0.16 if heavy else 0.1) * GRID
     y0, y1 = -H + COLLAR, (n_cells - 0.5) * GRID - 0.1 * GRID
     b.box((-pier, y0, -pier), (pier, y1, pier))
+    if heavy:  # a base block at the root and braces up to the pier
+        base = 0.42 * GRID
+        b.box((-base, y0, -base), (base, y0 + 0.55 * GRID, base))
+        b.box((-base - 0.3, y0 + 0.15 * GRID, -0.1 * GRID), (base + 0.3, y0 + 0.4 * GRID, 0.1 * GRID), ACCENT)
+        for z in (-1, 1):
+            b.beam((0, y0 + 0.5 * GRID, z * 0.8 * base), (0, min(y1, y0 + 1.4 * GRID), z * pier), 0.06 * GRID,
+                   material=ACCENT)
     for x in (-pier, pier):  # walkway rails
         b.box((x - 0.3, y0, pier), (x + 0.3, y1, pier + 0.5), ACCENT, collide=False)
     b.box((-pier * 1.6, y1 - 0.15 * GRID, -pier * 1.6), (pier * 1.6, y1 + 0.3, pier * 1.6), ACCENT)
@@ -342,6 +349,156 @@ def _dock(b: Builder, v: int, size: str, n_cells: int):
         rng = [range(math.floor((lo[i] + H) / GRID), math.floor((hi[i] + H - 1e-6) / GRID) + 1) for i in range(3)]
         res |= {(x, y, z) for x in rng[0] for y in rng[1] for z in rng[2]} - own
     m.reserved = sorted(res)
+    for cell, d in m.ports:
+        b.port(cell, d)
+
+
+def dock_heavy_s(b, v):
+    _dock(b, v, "S", 1, heavy=True)
+
+
+def dock_heavy_m(b, v):
+    _dock(b, v, "M", 2, heavy=True)
+
+
+def dock_heavy_l(b, v):
+    _dock(b, v, "L", 4, heavy=True)
+
+
+# ---------------------------------------------------------------- massive modules
+# The "massive" look: modules that fill their cells (a 3x3x3 core, thick halls and blocks).
+
+def core(b: Builder, v: int):
+    """3 x 3 x 3 cells (48 m), a port in the middle of every side."""
+    m = b.m
+    m.cells = [(0, 0, 0)] + [(x, y, z) for y in range(3) for x in (-1, 0, 1) for z in (-1, 0, 1)
+                             if (x, y, z) != (0, 0, 0)]
+    m.ports = [IN, ((0, 2, 0), (0, 1, 0)), ((1, 1, 0), (1, 0, 0)), ((-1, 1, 0), (-1, 0, 0)),
+               ((0, 1, 1), (0, 0, 1)), ((0, 1, -1), (0, 0, -1))]
+    c = Vector((0, GRID, 0))  # centre of the block
+    r = 1.3 * GRID
+    if v == 0:  # armoured drum
+        y0 = -H + 0.25 * GRID
+        span = 2.5 * GRID
+        b.loft((0, y0, 0), Y, [(0, 0.8 * r), (0.3 * GRID, r), (span - 0.3 * GRID, r), (span, 0.8 * r)], sides=8)
+        for t in (0.3, 0.5, 0.7):  # window decks
+            y = y0 + t * span
+            b.loft((0, y - 0.5, 0), Y, [(0, 1.01 * r), (1.0, 1.01 * r)], sides=8, material=GLOW, collide=False)
+        for t in (0.15, 0.85):  # armour belts
+            y = y0 + t * span
+            b.loft((0, y - 1.2, 0), Y, [(0, 1.04 * r), (2.4, 1.04 * r)], sides=8, material=ACCENT, collide=False)
+        for k in range(4):  # buttresses on the diagonals
+            a = math.pi / 4 + k * math.pi / 2
+            d = Vector((math.cos(a), 0, math.sin(a)))
+            p0 = d * 0.95 * r
+            b.box(p0 + Vector((-1.2, y0 + 0.4 * GRID, -1.2)), p0 + Vector((1.2, y0 + span - 0.4 * GRID, 1.2)), ACCENT)
+        b.decal(DECAL_TEXT, (r, c.y, 0.3 * GRID), X, TEXT_ASPECT * 0.16 * GRID, 0.16 * GRID, nu=6)
+        b.decal(DECAL_EMBLEM, (-r, c.y, 0.3 * GRID), -X, 0.4 * GRID, 0.4 * GRID, nu=3, nv=3)
+    else:  # block with corner towers
+        s = 1.2 * GRID
+        b.box(c - Vector((s, s, s)), c + Vector((s, s, s)))
+        for x in (-1, 1):
+            for z in (-1, 1):
+                p0 = c + Vector((x, 0, z)) * (s - 0.1 * GRID)
+                b.box(p0 - Vector((0.22 * GRID, s + 0.15 * GRID, 0.22 * GRID)),
+                      p0 + Vector((0.22 * GRID, s + 0.15 * GRID, 0.22 * GRID)), ACCENT)
+        for side in (X, -X, Vector((0, 0, 1)), Vector((0, 0, -1))):  # window rows on the four walls
+            u = side.cross(Y)
+            for h in (-0.45, 0.0, 0.45):
+                p0 = c + side * (s + 0.05) + Y * h * GRID
+                lo = p0 - u * 0.75 * GRID - Y * 0.03 * GRID
+                hi = p0 + u * 0.75 * GRID + Y * 0.03 * GRID + side * 0.2
+                b.box(Vector(map(min, lo, hi)), Vector(map(max, lo, hi)), GLOW, collide=False)
+        b.decal(DECAL_TEXT, (s, c.y + 0.75 * GRID, 0.0), X, TEXT_ASPECT * 0.14 * GRID, 0.14 * GRID, nu=6)
+        b.decal(DECAL_EMBLEM, (-s, c.y + 0.75 * GRID, 0.0), -X, 0.35 * GRID, 0.35 * GRID, nu=3, nv=3)
+    b.fx("beacon", (0, 2.5 * GRID - COLLAR, 0.6 * GRID), Y, 0.8)
+    for cell, d in m.ports:
+        b.port(cell, d, neck=0.4 * GRID)
+
+
+def bulkhead(b: Builder, v: int):
+    """A thick connecting segment (1 cell)."""
+    m = b.m
+    m.cells = [(0, 0, 0)]
+    m.ports = [IN, _out(1)]
+    y0, y1 = -H + COLLAR, H - COLLAR
+    if v == 0:
+        r = 0.42 * GRID
+        b.loft((0, y0, 0), Y, [(0, 0.75 * r), (0.15 * GRID, r), (y1 - y0 - 0.15 * GRID, r), (y1 - y0, 0.75 * r)],
+               sides=8)
+        b.loft((0, -0.6, 0), Y, [(0, 1.04 * r), (1.2, 1.04 * r)], sides=8, material=ACCENT, collide=False)
+    else:
+        s = 0.4 * GRID
+        b.box((-s, y0 + 0.1 * GRID, -s), (s, y1 - 0.1 * GRID, s))
+        for x in (-1, 1):
+            for z in (-1, 1):
+                b.box((x * s - 0.6, y0, z * s - 0.6), (x * s + 0.6, y1, z * s + 0.6), ACCENT)
+    for cell, d in m.ports:
+        b.port(cell, d)
+
+
+def hall(b: Builder, v: int):
+    """Storage hall (2 cells) filling its cells: general cargo."""
+    m = b.m
+    m.cells = [(0, 0, 0), (0, 1, 0)]
+    m.ports = [IN, _out(2)]
+    y0, y1 = -H + COLLAR + 0.12 * GRID, 1.5 * GRID - COLLAR - 0.12 * GRID
+    s = 0.44 * GRID
+    if v == 0:  # box with ribs
+        b.box((-s, y0, -s), (s, y1, s), CARGO)
+        n = 5
+        for k in range(n):
+            y = y0 + (k + 0.5) * (y1 - y0) / n
+            b.box((-s - 0.3, y - 0.4, -s - 0.3), (s + 0.3, y + 0.4, s + 0.3), ACCENT, collide=False)
+    else:  # gabled shed
+        b.loft((0, y0, 0), Y, [(0, s), (y1 - y0, s)], sides=6, material=CARGO)
+        b.box((-0.2 * GRID, y0 + 0.1 * GRID, s * 0.85), (0.2 * GRID, y1 - 0.1 * GRID, s * 0.85 + 0.4), GLOW,
+              collide=False)
+    b.decal(DECAL_STRIPES, (s, y0 + 0.08 * GRID, 0), X, 0.1 * GRID, 0.4 * GRID, nu=2, nv=2)
+    for cell, d in m.ports:
+        b.port(cell, d)
+
+
+def smelter(b: Builder, v: int):
+    """Heavy refinery block (2 cells): ore in, metal out."""
+    m = b.m
+    m.cells = [(0, 0, 0), (0, 1, 0)]
+    m.ports = [IN, _out(2)]
+    y0, y1 = -H + COLLAR + 0.12 * GRID, 1.5 * GRID - COLLAR - 0.12 * GRID
+    s = 0.43 * GRID
+    b.box((-s, y0, -s), (s, y1, 0.2 * GRID))
+    b.box((-0.7 * s, y0 + 0.2 * GRID, 0.2 * GRID), (0.7 * s, y1 - 0.2 * GRID, 0.3 * GRID), ACCENT)
+    stacks = (-0.25, 0.25) if v == 0 else (-0.25, 0.0, 0.25)
+    for k, x in enumerate(stacks):
+        y = y0 + (0.3 + 0.4 * k / max(1, len(stacks) - 1)) * (y1 - y0)
+        b.loft((x * GRID, y, 0.3 * GRID), Z, [(0, 0.09 * GRID), (0.14 * GRID, 0.08 * GRID)], sides=6, material=ACCENT)
+        b.loft((x * GRID, y, 0.44 * GRID), Z, [(0, 0.085 * GRID), (0.03 * GRID, 0.085 * GRID)], sides=6,
+               material=GLOW, collide=False)
+        b.fx("vent", (x * GRID, y, 0.47 * GRID), Z, 0.085 * GRID)
+    for x in (-1, 1):
+        b.box((x * s - 0.2, y0 + 0.1 * GRID, -0.3 * GRID), (x * s + 0.2, y1 - 0.1 * GRID, -0.15 * GRID), GLOW,
+              collide=False)
+        b.decal(DECAL_TEXT, (x * s, 0.5 * (y0 + y1), 0.02 * GRID), X * x, TEXT_ASPECT * 0.13 * GRID, 0.13 * GRID,
+                nu=6)
+    for cell, d in m.ports:
+        b.port(cell, d)
+
+
+def quarters(b: Builder, v: int):
+    """Crew quarters (2 cells), rows of windows."""
+    m = b.m
+    m.cells = [(0, 0, 0), (0, 1, 0)]
+    m.ports = [IN, _out(2)]
+    y0, y1 = -H + COLLAR + 0.12 * GRID, 1.5 * GRID - COLLAR - 0.12 * GRID
+    r = 0.46 * GRID
+    sides = 8 if v == 0 else 6
+    b.loft((0, y0, 0), Y, [(0, 0.7 * r), (0.12 * GRID, r), (y1 - y0 - 0.12 * GRID, r), (y1 - y0, 0.7 * r)],
+           sides=sides)
+    for k in range(6):
+        y = y0 + (0.2 + 0.12 * k) * (y1 - y0)
+        b.loft((0, y - 0.3, 0), Y, [(0, 1.015 * r), (0.6, 1.015 * r)], sides=sides, material=GLOW, collide=False)
+    flat = r * math.cos(math.pi / sides)
+    b.decal(DECAL_EMBLEM, (flat, y0 + 0.1 * (y1 - y0), 0), X, 0.18 * GRID, 0.18 * GRID, nu=3, nv=3)
     for cell, d in m.ports:
         b.port(cell, d)
 
@@ -437,11 +594,18 @@ DESIGNS = {
     "silo": (silo, 2), "tank": (tank, 2), "refinery": (refinery, 2),
     "dock_s": (dock_s, 2), "dock_m": (dock_m, 2), "dock_l": (dock_l, 2),
     "solar": (solar, 2), "radiator": (radiator, 2), "antenna": (antenna, 2), "command": (command, 2),
+    # massive look
+    "core": (core, 2), "bulkhead": (bulkhead, 2), "hall": (hall, 2), "smelter": (smelter, 2),
+    "quarters": (quarters, 2), "dock_heavy_s": (dock_heavy_s, 2), "dock_heavy_m": (dock_heavy_m, 2),
+    "dock_heavy_l": (dock_heavy_l, 2),
 }
+MASSIVE = ("core", "bulkhead", "hall", "smelter", "quarters", "dock_heavy_s", "dock_heavy_m", "dock_heavy_l")
 KINDS = tuple(DESIGNS)
 NAME = {"hub": "Hub", "corridor": "Corridor", "habitat": "Habitat", "storage": "Storage", "silo": "Silo",
         "tank": "Tank", "refinery": "Refinery", "dock_s": "DockS", "dock_m": "DockM", "dock_l": "DockL",
-        "solar": "Solar", "radiator": "Radiator", "antenna": "Antenna", "command": "Command"}
+        "solar": "Solar", "radiator": "Radiator", "antenna": "Antenna", "command": "Command",
+        "core": "Core", "bulkhead": "Bulkhead", "hall": "Hall", "smelter": "Smelter", "quarters": "Quarters",
+        "dock_heavy_s": "DockHeavyS", "dock_heavy_m": "DockHeavyM", "dock_heavy_l": "DockHeavyL"}
 
 
 def build(bm, kind: str, design: int) -> Module:

@@ -210,8 +210,9 @@ Ein Modul-Baukasten auf einem 16-m-Raster (Hubs, Korridore, Habitate, Lager, Sil
 Raffinerien, Andockarme S/M/L, Solar, Kühler, Antennen, Kommando) mit genormten Ports – das
 Spiel kann daraus selbst Stationen bauen – und ein Generator für fertige Stationen nach Rolle
 (Außenposten, Mining, Handel) und Größe. Schiffe docken außen an Andockarmen an, wie im Hafen:
-Liegeplätze sind Knoten mit Position, Bugrichtung und maximaler Schiffslänge. In Blender:
-Bereich **Stations**.
+Liegeplätze sind Knoten mit Position, Bugrichtung und maximaler Schiffslänge. Zwei Stile:
+schlank (`build = truss`, Gitter und Piers) und massiv (`build = massive`, 48-m-Kerne, dicke
+Hallen, schwere Andockarme). In Blender: Bereich **Stations**.
 
 ```bash
 .venv/bin/python cli.py --station mining_m
