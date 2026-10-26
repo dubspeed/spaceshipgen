@@ -63,8 +63,9 @@ der Bilder ist der Lack darunter – keine Transparenz nötig, Wracks schneiden 
 - Emblem: gehört zum Farbschema (`style.palette` = Firma): `industrial_yellow` Winkel,
   `military_grey` Stern, `white_red` Ring, `desert` Dreieck, `navy` Raute, `black_gold`
   Krone, `rust` Zahnrad.
-- Abschaltbar mit `style.decals = false` (Schiffe). Kleine Schiffe (Jäger) haben meist keinen
-  Platz dafür.
+- Platz: die Flanke entlang, mittig, darüber oder darunter, wo kein Teil sitzt und die Fläche
+  eben genug ist; wird es zu eng, werden die Decals kleiner oder fehlen. Abschaltbar mit
+  `style.decals = false` (Schiffe).
 
 ### Collision-Shapes
 

@@ -860,14 +860,15 @@ def _add_decals(p, cls, hull_bm, parts_bm, hull: _Hull, fr: _Frame, instances, t
     uv = hull_bm.loops.layers.uv.get("UVMap") or hull_bm.loops.layers.uv.new("UVMap")
     surface = decals.Surface(hull_bm)
     length = fr.length
-    taken = [i.box() for i in instances if i.live and i.kind != "greeble"] + list(hull.obstacles)
+    taken = [_full_box(i) for i in instances if i.live and i.kind != "greeble"] + list(hull.obstacles)
     text_px = decals._text_mask(text)
     aspect = len(text_px[0]) / len(text_px)
     placed = False
     for spots, mat, ratio, nu, nv in ((TEXT_SPOTS, DECAL_TEXT, aspect, 6, 2),
                                       (EMBLEM_SPOTS, DECAL_EMBLEM, 1.0, 3, 3)):
         done = False
-        for t, shrink in ((t, k) for k in (1.0, 0.75, 0.55) for t in spots):  # big first, then smaller
+        scan = spots + tuple(round(-0.4 + 0.04 * k, 2) for k in range(21) if round(-0.4 + 0.04 * k, 2) not in spots)
+        for shrink, level, t in ((k, z, t) for k in (1.0, 0.75, 0.55) for z in (0.0, 0.5, -0.5) for t in scan):
             y = t * length
             # the starboard decal is projected, the port one is its mirror image (exact symmetry)
             lay = max(hull.bodies, key=lambda b: b.x_offset)
@@ -876,7 +877,9 @@ def _add_decals(p, cls, hull_bm, parts_bm, hull: _Hull, fr: _Frame, instances, t
             if mat == DECAL_EMBLEM:
                 height *= 1.3
             width = height * ratio
-            centre = Vector((lay.x_offset + st.half_width, y, 0.5 * (st.top - st.bottom)))
+            # mid flank first, then above / below it (clear of side modules)
+            z = 0.5 * (st.top - st.bottom) + level * 0.5 * (st.top + st.bottom)
+            centre = Vector((lay.x_offset + st.half_width, y, z))
             grid = surface.project(centre, Vector((1, 0, 0)), Vector((0, 0, 1)), width, height, nu, nv, fr.beam)
             if grid is None:
                 continue
@@ -907,6 +910,14 @@ def _add_decals(p, cls, hull_bm, parts_bm, hull: _Hull, fr: _Frame, instances, t
 
 
 LIFT_PAD = 0.05
+
+
+def _full_box(inst) -> "Box":
+    """The whole part (``Instance.box`` leaves out what sits in the hull, but a decal there
+    would still be hidden behind the part's foot)."""
+    coords = inst.coords()
+    return Box(inst.kind, Vector(tuple(min(c[i] for c in coords) for i in range(3))),
+               Vector(tuple(max(c[i] for c in coords) for i in range(3))))
 
 
 def _decal_materials(p, mats, text: str) -> dict:
