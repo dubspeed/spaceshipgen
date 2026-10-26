@@ -5,6 +5,7 @@ Independent of any UI. Used by the add-on panel, ``cli.py`` and tests.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 import bpy
@@ -71,6 +72,11 @@ def _tri_count(mesh) -> int:
     return sum(len(poly.vertices) - 2 for poly in mesh.polygons)
 
 
+def base_name(name: str) -> str:
+    """``name`` without Blender's ``.001`` suffix (a wreck's parts next to the ship they were)."""
+    return re.sub(r"\.\d{3}$", "", name)
+
+
 def clear(collection_name: str = COLLECTION_NAME) -> None:
     """Remove a previously generated ship (objects, meshes, materials)."""
     coll = bpy.data.collections.get(collection_name)
@@ -95,7 +101,7 @@ def generate(raw_params: dict, collection_name: str = COLLECTION_NAME) -> Ship:
     if result.params["builder"] == "kit":
         from .. import kit
 
-        ship = kit.build(result.params)
+        ship = kit.build(result.params, collection=collection_name)
         ship.warnings[:0] = result.warnings
         return ship
     p = params_mod.individualize(result.params)

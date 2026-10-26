@@ -354,7 +354,7 @@ def _wreck(context):
 class SHIPGEN_OT_wreck_generate(bpy.types.Operator):
     bl_idname = "shipgen.wreck_generate"
     bl_label = "Wreck Ship"
-    bl_description = "Build a wreck of the ship set up in the ShipGen panel (replaces the ship)"
+    bl_description = "Build a wreck of the ship set up in the ShipGen panel (next to the ship)"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):

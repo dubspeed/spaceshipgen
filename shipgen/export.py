@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import math
 import os
+import re
 
 import bpy
 from mathutils import Vector
@@ -21,6 +23,37 @@ def _select_only(objects) -> None:
     bpy.context.view_layer.objects.active = objects[0]
 
 
+_SUFFIX = re.compile(r"^(.*)\.\d{3}$")
+
+
+@contextlib.contextmanager
+def _plain_names(objects):
+    """Export names (objects, meshes, materials) without Blender's ``.001`` suffix (a wreck next
+    to the ship it was): whatever holds the plain name steps aside meanwhile."""
+    meshes = [o.data for o in objects if o.type == "MESH"]
+    datas = list(objects) + meshes + list({m for me in meshes for m in me.materials if m})
+    renamed = []  # (ID, old name)
+    try:
+        for idb in datas:
+            m = _SUFFIX.match(idb.name)
+            if not m:
+                continue
+            pool = (bpy.data.objects if isinstance(idb, bpy.types.Object) else
+                    bpy.data.meshes if isinstance(idb, bpy.types.Mesh) else bpy.data.materials)
+            holder = pool.get(m.group(1))
+            if holder is not None and holder in datas:
+                continue  # both exported: keep the suffix
+            if holder is not None:
+                renamed.append((holder, holder.name))
+                holder.name = holder.name + "~"
+            renamed.append((idb, idb.name))
+            idb.name = m.group(1)
+        yield
+    finally:
+        for idb, old in reversed(renamed):
+            idb.name = old
+
+
 def export_glb(ship, path: str) -> str:
     """Export ``ship.objects`` (a ship or an asteroid). Objects hidden in the viewport (an
     asteroid's deeper chunk levels) are unhidden for the export: hidden ones can't be selected."""
@@ -29,15 +62,16 @@ def export_glb(ship, path: str) -> str:
     for obj in hidden:
         obj.hide_viewport = False
     try:
-        _select_only(ship.objects)
-        bpy.ops.export_scene.gltf(
-            filepath=path,
-            export_format="GLB",
-            use_selection=True,
-            export_apply=True,
-            export_yup=True,
-            export_extras=True,  # custom properties: root["shipgen"] holds params summary + stats
-        )
+        with _plain_names(ship.objects):
+            _select_only(ship.objects)
+            bpy.ops.export_scene.gltf(
+                filepath=path,
+                export_format="GLB",
+                use_selection=True,
+                export_apply=True,
+                export_yup=True,
+                export_extras=True,  # custom properties: root["shipgen"] holds params summary + stats
+            )
     finally:
         for obj in hidden:
             obj.hide_viewport = True

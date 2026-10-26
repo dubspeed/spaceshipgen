@@ -17,7 +17,9 @@ Colliders: each segment's ``-convcolonly`` pieces are the ship's hull pieces cli
 break planes (still convex, they cover the segment: rims, caps and pits only move inwards);
 parts keep their own; debris has the exact hull of its vertices.
 
-Generating a wreck replaces the ship in the ``ShipGen`` collection (it is built as one).
+A wreck lives in its own ``ShipGen_Wreck`` collection, next to a ship in ``ShipGen``: while both
+exist, Blender suffixes the wreck's part names (``Engine_0.001``); the export and the stats use
+the plain names (``generator.base_name``).
 """
 
 from __future__ import annotations
@@ -34,11 +36,12 @@ from mathutils.bvhtree import BVHTree
 
 from .. import fx, meshutil, stats
 from ..asteroids import geometry as geo
-from ..generator import Ship
+from ..generator import Ship, base_name
 from ..generator.materials import MATERIAL_PREFIX, _principled
 from ..kit import collision
 from . import params as params_mod
 
+COLLECTION = "ShipGen_Wreck"
 STATES = ("intact", "damaged", "detached", "destroyed")
 SCRAP_DENSITY = stats.DENSITY["hull"]  # t/m^3 of hull segments and debris
 
@@ -73,7 +76,7 @@ def generate(raw_params: dict, ship_params: dict) -> Wreck:
     sp["seed"] = p["ship_seed"] if p["ship_seed"] >= 0 else p["seed"]
     style = sp.setdefault("style", {})
     style["wear"] = max(style.get("wear", 0.0), 0.5 + 0.5 * p["damage"])  # old, dull paint
-    ship = generator.generate(sp)
+    ship = generator.generate(sp, collection_name=COLLECTION)
     warnings = list(result.warnings) + [w for w in ship.warnings if not w.startswith("fit:")]
     rng = random.Random(f"{p['seed']}:wreck")
     wreck = _Wrecker(p, ship, rng).run()
@@ -108,7 +111,7 @@ def _volume(bm) -> float:
 class _Wrecker:
     def __init__(self, p, ship, rng: random.Random):
         self.p, self.ship, self.rng = p, ship, rng
-        self.coll = bpy.data.collections["ShipGen"]
+        self.coll = bpy.data.collections[COLLECTION]
         self.root = ship.root
         self.length = ship.params["hull"]["length"]
         self.beam = 0.5 * self.length * ship.params["hull"]["width_ratio"]
@@ -168,8 +171,8 @@ class _Wrecker:
                 if _is_glow(mat):
                     obj.data.materials[i] = self.mats["dead"]
 
-        hull = next(o for o in ship.parts if o.name == "Ship_Hull")
-        greebles = [o for o in ship.parts if o.name == "Ship_Greebles"]
+        hull = next(o for o in ship.parts if base_name(o.name) == "Ship_Hull")
+        greebles = [o for o in ship.parts if base_name(o.name) == "Ship_Greebles"]
         parts = [o for o in ship.parts if "shipgen_part" in o]
         hull_cols = [c for c in ship.colliders if c.parent is ship.root]
 
@@ -188,7 +191,7 @@ class _Wrecker:
             role = obj["shipgen_role"]
             if fate == "destroyed":
                 debris += self._shatter(obj, points)
-                salvage.append({"name": obj.name, "kind": info["kind"], "design": info["design"],
+                salvage.append({"name": base_name(obj.name), "kind": info["kind"], "design": info["design"],
                                 "state": fate, "condition": 0.0, "mass_t": 0.0})
                 for child in list(obj.children):
                     _remove(child)
@@ -215,7 +218,7 @@ class _Wrecker:
             obj["shipgen_salvage"] = entry
             if fate in ("damaged", "detached"):  # leaking gas along its mount axis
                 self._fx(obj, Vector(), Vector((0, 1, 0)), "vent", 0.3 * obj.dimensions.length / math.sqrt(3))
-            salvage.append({"name": obj.name, "kind": info["kind"], "design": info["design"], **entry})
+            salvage.append({"name": base_name(obj.name), "kind": info["kind"], "design": info["design"], **entry})
             kept.append(obj)
         debris += self._fragments(segments, rests)
 
@@ -448,7 +451,7 @@ class _Wrecker:
         for cell in cells[: self.rng.randint(1, 3)]:
             c = geo.centroid(cell)
             shard = [c + (q - c) * self.rng.uniform(0.4, 0.6) for q in cell]
-            out.append(self._debris(shard, [obj.data.materials[0], self.mats["burnt"]], obj.name))
+            out.append(self._debris(shard, [obj.data.materials[0], self.mats["burnt"]], base_name(obj.name)))
         return [d for d in out if d is not None]
 
     def _fragments(self, segments, rests) -> list:

@@ -3,8 +3,9 @@
 Code: `shipgen/wrecks/` (Generator, Schema), Presets: `presets/wrecks/` (jedes nennt sein
 Shop-Modell unter `"ship"`), Bild: `scripts/station_demo.py --only wrecks`.
 
-In Blender: Seitenleiste (N) → **ShipGen** → Bereich **Wrecks**. **Wreck Ship** zerstört das
-Schiff, das oben im ShipGen-Bereich eingestellt ist (es ersetzt das Schiff in der Szene).
+In Blender: Seitenleiste (N) → **ShipGen** → Bereich **Wrecks**. **Wreck Ship** baut ein Wrack
+des Schiffs, das oben im ShipGen-Bereich eingestellt ist – neben dem Schiff (eigene Collection
+`ShipGen_Wreck`; Blender hängt an doppelte Namen `.001` an, der Export schreibt die reinen Namen).
 
 ```bash
 .venv/bin/python cli.py --wreck miner_m_broken          # output/miner_m_broken_1{.glb,.blend,.png,.json}
@@ -65,5 +66,3 @@ Hülle ihrer Punkte.
 
 - Andere Schiffstypen (alte/fremde Designs) – bisher nur Shop-Modelle.
 - Zerlegbar (wie die Asteroiden) ist ein Wrack bewusst nicht.
-- Wracks nutzen dieselbe Collection wie das Schiff (`ShipGen`): Schiff und Wrack zugleich in
-  einer Szene gehen nicht (die Namen wären doppelt).

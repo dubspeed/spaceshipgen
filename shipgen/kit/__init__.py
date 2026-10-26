@@ -156,7 +156,8 @@ FIT_ISSUE = "fit: "  # warnings that mean the hull could not carry the loadout a
 
 
 def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_design=None, rig_design=None,
-          module_design=None, resolve: bool = True, detail: float | None = None) -> KitShip:
+          module_design=None, resolve: bool = True, detail: float | None = None,
+          collection: str = COLLECTION) -> KitShip:
     """Build a kit ship.
 
     Hull blocks and part designs default to the seed's pick within the class kit (explicit
@@ -164,7 +165,8 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
     keeps the first that carries the whole loadout (part sizes come from the model params, not
     from the hull), so the seed changes the look but not the stats. ``resolve=False`` keeps
     colliding parts (to inspect conflicts). ``detail`` overrides ``kit.detail`` (hull surface
-    detail 0..1, see hull_detail).
+    detail 0..1, see hull_detail). ``collection``: where the ship is built (replacing what is
+    there); wrecks build theirs next to the ship.
     """
     p = params_mod.individualize(params_mod.validate(raw_params).params)
     kp = p["kit"]  # explicit arguments win over the params; "auto" / -1 = the seed picks
@@ -195,14 +197,16 @@ def build(raw_params: dict, plan=None, tail=None, mid=None, nose=None, engine_de
     candidates = Design.candidates(cls, stream, plan=plan, tail=tail, mid=mid, nose=nose)[:MAX_CANDIDATES]
     best = None
     for design in candidates:
-        ship = _build_once(p, cls, stream, design, engine_design, rig_design, module_design, resolve, detail)
+        ship = _build_once(p, cls, stream, design, engine_design, rig_design, module_design, resolve, detail,
+                           collection)
         issues = sum(w.startswith(FIT_ISSUE) for w in ship.warnings)
         if issues == 0:
             ship.warnings[:0] = early_warnings
             return ship
         if best is None or issues < best[0]:
             best = (issues, design)
-    ship = _build_once(p, cls, stream, best[1], engine_design, rig_design, module_design, resolve, detail)
+    ship = _build_once(p, cls, stream, best[1], engine_design, rig_design, module_design, resolve, detail,
+                       collection)
     ship.warnings[:0] = early_warnings
     return ship
 
@@ -234,9 +238,10 @@ class _Hull:
     body_bms: list = field(default_factory=list)  # detailed bodies, joined into the hull after the parts
 
 
-def _build_once(p, cls, stream, design, engine_design, rig_design, module_design, resolve, detail=0.0) -> KitShip:
-    clear(COLLECTION)
-    coll = bpy.data.collections.new(COLLECTION)
+def _build_once(p, cls, stream, design, engine_design, rig_design, module_design, resolve, detail=0.0,
+                collection=COLLECTION) -> KitShip:
+    clear(collection)
+    coll = bpy.data.collections.new(collection)
     bpy.context.scene.collection.children.link(coll)
     root = bpy.data.objects.new("Ship", None)
     coll.objects.link(root)

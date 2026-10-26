@@ -106,7 +106,8 @@ same class, mining and cargo type share the seed streams).
 - `shipgen/wrecks/` – wrecks of shop models (prototype, `docs/wrecks/README.md`): builds the kit
   ship, cuts hull + greebles into drifting segments `Hull_<k>` (ragged rim, hollow cap), pits,
   scorch, dead glow; parts keep names/extras plus `shipgen_salvage` state; segment colliders are
-  the ship's hull pieces clipped by the break planes. Shares the `ShipGen` collection with ships.
+  the ship's hull pieces clipped by the break planes. Own `ShipGen_Wreck` collection, so it can
+  sit next to the ship (Blender suffixes its names `.001`; `export._plain_names` strips them).
   Presets in `presets/wrecks/` name their ship preset under `"ship"`.
 - `shipgen/stations/` – station module kit + layouts (prototype, `docs/stations/README.md`):
   `modules.py` holds the grid contract (16 m cells, ports on cell faces, port 0 on -Y of cell 0,
@@ -158,8 +159,8 @@ same class, mining and cargo type share the seed streams).
 - Materials: plain Principled values only (no linked textures), so the glTF matches.
 - The export format (node names, extras, materials, asteroid levels) is specified for importer
   authors in `docs/export_format.md`: update it whenever the .glb/.json structure changes.
-- `output/` and `dist/` are git-ignored. Commit presets and, occasionally, the sheets in
-  `docs/renders/` and `docs/shop_stats.md`.
+- `output/` and `dist/` are git-ignored. Commit presets and, occasionally, the docs sheets
+  (`scripts/render_docs.py` regenerates all of them).
 
 ## Commands
 
@@ -191,6 +192,8 @@ python3 scripts/stats_table.py /tmp/l/*.json
 .venv/bin/python cli.py --station mining_m
 .venv/bin/python cli.py --station-kit --no-render
 .venv/bin/python scripts/station_demo.py [--only modules,stations,docked,wrecks]
+# re-render every docs picture/table (lineup + stats, kit, hull_detail, asteroids, stations/wrecks)
+.venv/bin/python scripts/render_docs.py [--only lineup,stations] [--list]
 # installable extension zip -> dist/
 python3 scripts/build_extension.py
 ```

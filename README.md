@@ -186,7 +186,7 @@ Details, Hierarchie in Godot und Werte: [`docs/asteroids/README.md`](docs/astero
 Shop-Modelle als Wrack: Rumpf in Segmente zerbrochen, ausgefranste Bruchkanten, Löcher,
 Brandspuren, erloschene Lichter. Jedes Teil behält Namen und Design und hat einen Zustand
 (intakt, beschädigt, abgerissen, zerstört) plus Masse – fürs Bergen. In Blender: Bereich
-**Wrecks** (zerstört das oben eingestellte Schiff).
+**Wrecks** (baut das oben eingestellte Schiff als Wrack daneben).
 
 ```bash
 .venv/bin/python cli.py --wreck miner_m_broken

@@ -1,6 +1,6 @@
 | ship | class | length m | mass t | accel m/s² | turn °/s² | hull HP | general m³ | ore m³ | fluid m³ | pax | mining | mining power | range m |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| corvette_11 | corvette | 61.16 | 366.05 | 7.48 | 4.2 | 27780 | 249.65 | 0.0 | 0.0 | 0 | none | 0.0 | 0.0 |
+| corvette_11 | corvette | 61.16 | 366.06 | 7.48 | 4.2 | 27780 | 249.65 | 0.0 | 0.0 | 0 | none | 0.0 | 0.0 |
 | fighter_42 | fighter | 11.99 | 6.27 | 26.69 | 76.51 | 870 | 0.0 | 0.0 | 0.0 | 0 | none | 0.0 | 0.0 |
 | freighter_7 | freighter | 40.37 | 314.21 | 17.91 | 15.25 | 12680 | 919.04 | 0.0 | 0.0 | 0 | none | 0.0 | 0.0 |
 | hauler_l_204 | freighter | 61.41 | 1097.81 | 8.03 | 4.5 | 27159 | 5143.3 | 0.0 | 0.0 | 0 | none | 0.0 | 0.0 |

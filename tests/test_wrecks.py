@@ -62,16 +62,17 @@ class WreckTest(unittest.TestCase):
 
         sp = preset("hauler_m")
         ship = generator.generate(dict(sp, seed=5))
-        names = sorted(o.name for o in ship.parts if "shipgen_part" in o)
+        names = sorted(generator.base_name(o.name) for o in ship.parts if "shipgen_part" in o)
         w = self.wrecks.generate({"seed": 7, "ship_seed": 5, "damage": 0.8, "breaks": 2}, sp)
         salvage = w.stats["salvage"]
         self.assertEqual(sorted(e["name"] for e in salvage), names)
         self.assertEqual(sum(w.stats["parts"].values()), len(names))
-        alive = {o.name for o in w.parts}
+        self.assertTrue(all(o.name in bpy.data.objects for o in ship.parts))  # the ship is still there
+        alive = {generator.base_name(o.name): o for o in w.parts}  # its names are taken: Engine_0.001
         for e in salvage:
             self.assertEqual(e["name"] in alive, e["state"] != "destroyed", e)
             if e["state"] != "destroyed":
-                obj = bpy.data.objects[e["name"]]
+                obj = alive[e["name"]]
                 self.assertEqual(obj["shipgen_salvage"]["state"], e["state"])
                 mounted = e["state"] in ("intact", "damaged")
                 self.assertEqual(obj.parent.name.startswith("Hull_"), mounted, e)
