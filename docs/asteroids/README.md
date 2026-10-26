@@ -69,6 +69,39 @@ Körper lösen). Jeder Brocken hat seinen Ursprung im eigenen Schwerpunkt.
 Taube Brocken liefern 5 %. Idee für das Spiel: Abbauzeit ≈ Härte × Ertrag ÷ Abbauleistung
 (mittleres Rig = 100); Klauen greifen Brocken bis `grab_size_m`.
 
+## Asteroidenfelder
+
+Code: `shipgen/fields/`, Presets: `presets/fields/` (`ore_belt`, `mixed_cluster`, `ice_ring`),
+Bild: `scripts/asteroid_demo.py` → `fields.png`. In Blender: Bereich **Asteroid Fields**.
+
+```bash
+.venv/bin/python cli.py --field ore_belt          # ore_belt_3.glb + ore_belt_3_rock_<k>.glb + .json
+.venv/bin/python cli.py --field all --views top --no-blend
+```
+
+![Felder](fields.png)
+
+Von oben: Erzgürtel, gemischter Haufen, Eisring.
+
+- **Aus wenigen Prefabs:** `prefabs` einzigartige Asteroiden (Größen log-gleichmäßig zwischen
+  `min_size_m` und `max_size_m`, Stoffe nach den Anteilen `ore` / `metal` / `ice`), daraus
+  `count` Platzierungen mit Position und Drehung. Nie skaliert (die Werte kommen aus der
+  Geometrie), nie überlappend (`gap_m`).
+- **Formen** (`shape`): `belt` (leicht gebogenes Band entlang X), `cluster` (dichter in der
+  Mitte), `ring` (Ring um den Mittelpunkt, z. B. um eine Station). Flach (`thickness`) für die
+  Draufsicht.
+- **Größen** (`size_bias`): Potenzgesetz – viele kleine, wenige große Brocken.
+- **Zonen** (`zoned`): die Stoffe liegen in Abschnitten entlang des Feldes (Gürtel: Erz →
+  Metall → Eis von einem Ende zum anderen; Ring: rundherum); 0 = überall gemischt.
+- **Klumpen** (`clumping`): Brocken sammeln sich um einige Klumpen-Zentren.
+- **Export:** `<name>.glb` = das Feld (`AsteroidField` → `Rock_<i>` mit der Vorschau des
+  Prefabs = seine Ebene-1-Brocken als ein Mesh, das sich alle Platzierungen teilen, plus
+  geteiltem konvexen Collider), `<name>_rock_<k>.glb` = das zerbrechliche Prefab (alle
+  Ebenen, wie ein einzelner Asteroid), `<name>.json` mit `manifest` (jede Platzierung in
+  Godot-Achsen + Prefab-Datei). `godot/shipgen_field.gd` baut das Feld aus dem Manifest auf.
+- **Werte:** pro Platzierung `asteroid_instance` (Prefab, Stoff, Größe, Ertrag …), für das
+  Feld Anzahl pro Stoff, Ertrag pro Ladungsart, Masse.
+
 ## Offen
 
 - Gase (Gaswolken/Kometen) später.

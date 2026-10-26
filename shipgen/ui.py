@@ -13,8 +13,9 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, FloatVectorProperty, IntProperty, StringProperty
 from bpy_extras.io_utils import ImportHelper
 
-from . import asteroids, export, generator, params, stations, wrecks
+from . import asteroids, export, fields, generator, params, stations, wrecks
 from .asteroids import params as asteroid_params
+from .fields import params as field_params
 from .stations import params as station_params
 from .wrecks import params as wreck_params
 from .generator.materials import hex_to_rgb
@@ -72,6 +73,7 @@ ShipGenAsteroidProperties = _props_class("ShipGenAsteroidProperties", asteroid_p
 
 ShipGenWreckProperties = _props_class("ShipGenWreckProperties", wreck_params.SCHEMA, {})
 ShipGenStationProperties = _props_class("ShipGenStationProperties", station_params.SCHEMA, {})
+ShipGenFieldProperties = _props_class("ShipGenFieldProperties", field_params.SCHEMA, {})
 
 
 def props_to_params(props, schema_mod=params) -> dict:
@@ -535,6 +537,97 @@ class SHIPGEN_PT_stations(bpy.types.Panel):
         layout.operator("shipgen.station_export", icon="EXPORT")
 
 
+# ---------------------------------------------------------------- asteroid fields
+
+FIELD_GROUPS = (
+    ("Field", ("seed", "shape", "size_m", "width", "thickness")),
+    ("Rocks", ("count", "prefabs", "min_size_m", "max_size_m", "size_bias", "gap_m")),
+    ("Composition", ("ore", "metal", "ice", "zoned", "clumping")),
+)
+
+
+class SHIPGEN_OT_field_generate(bpy.types.Operator):
+    bl_idname = "shipgen.field_generate"
+    bl_label = "Generate Field"
+    bl_description = "Lay out an asteroid field from a few unique rocks"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        f = fields.generate(props_to_params(context.scene.shipgen_field, field_params))
+        for w in f.warnings:
+            self.report({"WARNING"}, w)
+        c = f.stats["per_composition"]
+        self.report({"INFO"}, f"Field: {f.stats['rocks']} rocks ({c['ore']} ore, {c['metal']} metal, {c['ice']} ice) "
+                              f"from {len(f.prefabs)} prefabs")
+        return {"FINISHED"}
+
+
+class SHIPGEN_OT_field_random_seed(bpy.types.Operator):
+    bl_idname = "shipgen.field_random_seed"
+    bl_label = "Random Seed"
+    bl_description = "Pick a new seed and regenerate the field"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        context.scene.shipgen_field.seed = random.randint(0, 999_999)
+        return bpy.ops.shipgen.field_generate()
+
+
+class SHIPGEN_OT_field_export(bpy.types.Operator):
+    bl_idname = "shipgen.field_export"
+    bl_label = "Export .glb"
+    bl_description = "Export the field (.glb), one breakable .glb per prefab rock and the manifest (.json)"
+
+    def execute(self, context):
+        props = context.scene.shipgen_field
+        p = props_to_params(props, field_params)
+        f = fields.generate(p)  # deterministic: rebuilds exactly what the panel shows
+        out_dir = bpy.path.abspath(props.export_dir)
+        name = f"field_{p['shape']}_{p['seed']}"
+        path = export.export_glb(f, os.path.join(out_dir, name + ".glb"))
+        fields.export_prefabs(f, out_dir, name)
+        with open(os.path.join(out_dir, name + ".json"), "w", encoding="utf-8") as fh:
+            json.dump({"params": p, "stats": f.stats, "manifest": fields.manifest(f, name)}, fh, indent=2)
+        self.report({"INFO"}, f"Exported {path} and {len(f.prefabs)} prefab rocks")
+        return {"FINISHED"}
+
+
+class SHIPGEN_PT_fields(bpy.types.Panel):
+    bl_label = "Asteroid Fields"
+    bl_idname = "SHIPGEN_PT_fields"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "ShipGen"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        props = context.scene.shipgen_field
+        layout = self.layout
+        row = layout.row(align=True)
+        row.scale_y = 1.4
+        row.operator("shipgen.field_generate", icon="PARTICLES")
+        row.operator("shipgen.field_random_seed", text="", icon="FILE_REFRESH")
+        for title, keys in FIELD_GROUPS:
+            box = layout.box()
+            box.label(text=title)
+            col = box.column(align=True)
+            for key in keys:
+                col.prop(props, key)
+        root = bpy.data.objects.get("AsteroidField")
+        info = root.get("shipgen_field") if root is not None else None
+        if info is not None:
+            s = info["stats"]
+            box = layout.box()
+            box.label(text="Values", icon="INFO")
+            col = box.column(align=True)
+            c = s["per_composition"]
+            col.label(text=f"{s['rocks']} rocks: {c['ore']} ore, {c['metal']} metal, {c['ice']} ice")
+            y = s["yield"]
+            col.label(text=f"Yield {y.get('ore_m3', 0):.0f} m³ ore, {y.get('fluid_m3', 0):.0f} m³ ice")
+        layout.prop(props, "export_dir")
+        layout.operator("shipgen.field_export", icon="EXPORT")
+
+
 classes = (
     ShipGenProperties,
     ShipGenAsteroidProperties,
@@ -561,6 +654,11 @@ classes = (
     SHIPGEN_OT_station_kit,
     SHIPGEN_OT_station_export,
     SHIPGEN_PT_stations,
+    ShipGenFieldProperties,
+    SHIPGEN_OT_field_generate,
+    SHIPGEN_OT_field_random_seed,
+    SHIPGEN_OT_field_export,
+    SHIPGEN_PT_fields,
 )
 
 
@@ -571,9 +669,11 @@ def register():
     bpy.types.Scene.shipgen_asteroid = bpy.props.PointerProperty(type=ShipGenAsteroidProperties)
     bpy.types.Scene.shipgen_wreck = bpy.props.PointerProperty(type=ShipGenWreckProperties)
     bpy.types.Scene.shipgen_station = bpy.props.PointerProperty(type=ShipGenStationProperties)
+    bpy.types.Scene.shipgen_field = bpy.props.PointerProperty(type=ShipGenFieldProperties)
 
 
 def unregister():
+    del bpy.types.Scene.shipgen_field
     del bpy.types.Scene.shipgen_station
     del bpy.types.Scene.shipgen_wreck
     del bpy.types.Scene.shipgen_asteroid

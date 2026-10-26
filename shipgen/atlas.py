@@ -196,17 +196,20 @@ def baked(objects):
     atlas = Atlas(mats)
     atlas.build()
     swapped = []
+    copies: dict = {}  # original mesh -> baked copy: objects that share a mesh keep sharing it
     try:
         for obj in meshes:
             original = obj.data
-            obj.data = _bake_mesh(original, atlas)
+            if original.name not in copies:
+                copies[original.name] = _bake_mesh(original, atlas)
+            obj.data = copies[original.name]
             swapped.append((obj, original))
         bpy.context.view_layer.update()  # the exporter reads the evaluated (depsgraph) meshes
         yield atlas
     finally:
         for obj, original in swapped:
-            copy = obj.data
             obj.data = original
+        for copy in copies.values():
             bpy.data.meshes.remove(copy)
         bpy.data.materials.remove(atlas.material)
         for img in atlas.textures:

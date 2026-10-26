@@ -188,6 +188,13 @@ Details, Hierarchie in Godot und Werte: [`docs/asteroids/README.md`](docs/astero
 
 ![Asteroiden](docs/asteroids/types.png)
 
+**Asteroidenfelder:** Gürtel, Haufen oder Ring aus wenigen einzigartigen Asteroiden (je eine
+zerbrechliche `.glb`) und vielen Platzierungen – viele kleine, wenige große Brocken, Stoffe in
+Zonen (Erz → Metall → Eis), flach für die Draufsicht. Blender-Bereich **Asteroid Fields**,
+`cli.py --field ore_belt`; im Spiel baut `godot/shipgen_field.gd` das Feld aus dem Manifest.
+
+![Felder](docs/asteroids/fields.png)
+
 ## Schiffswracks (Prototyp)
 
 Shop-Modelle als Wrack: Rumpf in Segmente zerbrochen, ausgefranste Bruchkanten, Löcher,

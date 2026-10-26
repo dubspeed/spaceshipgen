@@ -87,7 +87,7 @@ class Asteroid:
         return [self.root, *(c.obj for c in self.chunks), *(c.collider for c in self.chunks), *self.fx_objects]
 
 
-def generate(raw_params: dict) -> Asteroid:
+def generate(raw_params: dict, collection: str = COLLECTION) -> Asteroid:
     """Build an asteroid from (possibly unvalidated) params; replaces the previous one."""
     result = params_mod.validate(raw_params)
     p = result.params
@@ -95,7 +95,7 @@ def generate(raw_params: dict) -> Asteroid:
     levels, coarse = p["max_levels"], 1.0
     while True:
         tree, fractures, surf = _fracture(p, levels, coarse)
-        rock = _build_objects(p, tree, fractures, surf)
+        rock = _build_objects(p, tree, fractures, surf, collection)
         tris = sum(len(poly.vertices) - 2 for c in rock.chunks for poly in c.obj.data.polygons)
         if tris <= p["max_tris"] or coarse >= MAX_COARSE:
             break
@@ -206,9 +206,9 @@ def _on_fracture(n: Vector, d: float, fractures, tol: float, inset: float = 0.0)
     return False
 
 
-def _build_objects(p, tree: list[Chunk], fractures, surf) -> Asteroid:
-    _clear(COLLECTION)
-    coll = bpy.data.collections.new(COLLECTION)
+def _build_objects(p, tree: list[Chunk], fractures, surf, collection: str = COLLECTION) -> Asteroid:
+    _clear(collection)
+    coll = bpy.data.collections.new(collection)
     bpy.context.scene.collection.children.link(coll)
     root = bpy.data.objects.new("Asteroid", None)
     coll.objects.link(root)

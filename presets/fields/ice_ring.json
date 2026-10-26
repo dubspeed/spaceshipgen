@@ -1,0 +1,11 @@
+{
+  "seed": 7,
+  "shape": "ring",
+  "size_m": 900,
+  "count": 120,
+  "ore": 0.15,
+  "metal": 0.1,
+  "ice": 0.75,
+  "zoned": 0.7,
+  "width": 0.15
+}

@@ -1,0 +1,11 @@
+{
+  "seed": 5,
+  "shape": "cluster",
+  "size_m": 400,
+  "count": 60,
+  "ore": 0.4,
+  "metal": 0.35,
+  "ice": 0.25,
+  "zoned": 0.2,
+  "clumping": 0.6
+}

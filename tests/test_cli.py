@@ -101,6 +101,17 @@ class CliTest(unittest.TestCase):
             with open(os.path.join(out, "outpost_s_1.json")) as f:
                 self.assertGreater(sum(json.load(f)["stats"]["berths"].values()), 0)
 
+    def test_field(self):
+        with tempfile.TemporaryDirectory() as out:
+            proc, results = self.run_cli("--field", "mixed_cluster", "--set", "count=15", "--set", "prefabs=3",
+                                         "--no-render", "--no-blend", "--out", out)
+            self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
+            with open(os.path.join(out, "mixed_cluster_5.json")) as f:
+                man = json.load(f)["manifest"]
+            self.assertEqual(len(man["rocks"]), 15)
+            for rock in man["rocks"]:  # every prefab file the manifest names exists
+                self.assertTrue(os.path.isfile(os.path.join(out, rock["file"])), rock["file"])
+
     def test_strict_rejects_invalid_params(self):
         with tempfile.TemporaryDirectory() as out:
             proc, results = self.run_cli("--preset", "fighter", "--set", "hull.length=-5", "--strict",

@@ -103,6 +103,11 @@ same class, mining and cargo type share the seed streams).
   has a convex `<name>_col-convcolonly` child (exact hull of its vertices); deeper levels are
   parented under their chunk and hidden; per-chunk stats from the mesh; `COMPOSITION` =
   ore/metal/ice constants). Presets in `presets/asteroids/`.
+- `shipgen/fields/` – asteroid fields: a few unique prefab rocks (asteroids.generate into the
+  `ShipGen_FieldPrefab` work collection) and many placements (no scaling, no overlap, power-law
+  sizes, compositions zoned along belt/cluster/ring, clumps). `Rock_<i>` share one preview mesh
+  per prefab (its level-1 chunks) and one collider; `export_prefabs` writes the breakable
+  prefabs, `manifest` the placements in Godot axes. Presets in `presets/fields/`.
 - `shipgen/wrecks/` – wrecks of shop models (prototype, `docs/wrecks/README.md`): builds the kit
   ship, cuts hull + greebles into drifting segments `Hull_<k>` (ragged rim, hollow cap), pits,
   scorch, dead glow; parts keep names/extras plus `shipgen_salvage` state; segment colliders are
@@ -126,8 +131,8 @@ same class, mining and cargo type share the seed streams).
   change shapes.
 - `shipgen/metrics.py` – top-view silhouette metrics (numpy rasteriser).
 - `shipgen/export.py` – `.glb`, `.blend`, Cycles previews (`three_quarter` and orthographic `top`).
-- `shipgen/ui.py` – sidebar tab "ShipGen": ship panel + "Wrecks", "Asteroids", "Stations"
-  panels (`WRECK_GROUPS`, `ASTEROID_GROUPS`, `STATION_GROUPS`,
+- `shipgen/ui.py` – sidebar tab "ShipGen": ship panel + "Wrecks", "Asteroids", "Asteroid Fields",
+  "Stations" panels (`WRECK_GROUPS`, `ASTEROID_GROUPS`, `FIELD_GROUPS`, `STATION_GROUPS`,
   `show_level` toggles the break levels in the viewport); properties generated from the schemas
   (nested keys flattened as `hull__length`); `tests/test_ui.py` runs the operators headless.
 - `cli.py`, `presets/*.json` (one per class), `tests/`, `scripts/`.
@@ -198,6 +203,7 @@ python3 scripts/stats_table.py /tmp/l/*.json
 # asteroids: CLI (presets/asteroids/), demo sheets (docs/asteroids/)
 .venv/bin/python cli.py --asteroid ore_m
 .venv/bin/python scripts/asteroid_demo.py
+.venv/bin/python cli.py --field ore_belt          # field .glb + one .glb per prefab rock + manifest
 # wrecks and stations: CLI (presets/wrecks/, presets/stations/), sheets (docs/stations/, docs/wrecks/)
 .venv/bin/python cli.py --wreck miner_m_broken
 .venv/bin/python cli.py --station mining_m

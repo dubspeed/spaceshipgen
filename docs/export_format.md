@@ -1,7 +1,7 @@
 # Exportformat: Schiffe, Asteroiden, Wracks und Stationen
 
 Diese Beschreibung richtet sich an alle, die einen Importer für die ShipGen-Exporte schreiben
-(Godot oder eine andere Engine). Sie beschreibt Stand **Extension 0.5.0** (Baukasten-Builder
+(Godot oder eine andere Engine). Sie beschreibt Stand **Extension 0.6.0** (Baukasten-Builder
 `kit`, Standard für alle Presets). Alles hier ist aus echten Exporten nachgeprüft.
 
 Pro Objekt entstehen zwei Dateien mit gleichem Namen:
@@ -491,6 +491,34 @@ Schiff (Palette aus `style`), dazu `ShipGen_Solar` (Solarpaneele) und die Decals
 
 `{"model", "model_params", "params", "stats"}` (Kommandozeile) bzw. `{"params", "stats"}`
 (Panel).
+
+---
+
+## 5b. Asteroidenfelder
+
+Kommandozeile `--field <preset>`: `<name>.glb` (das Feld), `<name>_rock_<k>.glb` (ein
+zerbrechlicher Asteroid pro Prefab, Format wie Abschnitt 3) und `<name>.json` mit `manifest`.
+
+```
+AsteroidField                         extras.shipgen_field = {seed, shape, prefabs, stats}
+├── Rock_0                            Platzierung   extras.asteroid_instance
+│   └── Rock_0_col-convcolonly        konvexe Hülle der Vorschau
+├── Rock_1 …
+```
+
+- `Rock_<i>`: Translation + Rotation (nie Skalierung). Das Mesh ist die Vorschau des Prefabs
+  (seine Ebene-1-Brocken in einem Mesh) und wird von allen Platzierungen desselben Prefabs
+  **geteilt** (gleicher glTF-Mesh-Index); ebenso der Collider.
+- `asteroid_instance = {prefab, composition, size_m, volume_m3, mass_t, yield_m3, cargo,
+  hardness, zone}` – `prefab` = `rock_<k>` → Datei `<name>_rock_<k>.glb`; `zone` = Lage
+  entlang des Feldes (0–1).
+- `manifest = {axes: "godot", params, stats, prefabs: {rock_<k>: {file, asteroid_params}},
+  rocks: [{name, prefab, file, position [x, y, z], rotation [x, y, z, w], composition, zone}]}` –
+  Position und Rotation in Godot-Achsen, identisch mit den Knoten der Feld-`.glb`.
+- `stats = {rocks, per_composition, yield: {ore_m3, fluid_m3}, mass_t, extent_m, prefabs}`.
+
+Zum Abbauen: an der Stelle eines `Rock_<i>` die Prefab-Szene instanziieren (oder gleich alle
+über `godot/shipgen_field.gd` aus dem Manifest) und sie wie in Abschnitt 3 zerbrechen.
 
 ---
 

@@ -1,0 +1,10 @@
+{
+  "seed": 3,
+  "shape": "belt",
+  "size_m": 600,
+  "count": 90,
+  "ore": 0.7,
+  "metal": 0.2,
+  "ice": 0.1,
+  "zoned": 0.5
+}

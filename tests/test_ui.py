@@ -84,6 +84,9 @@ class PanelTest(unittest.TestCase):
         self.assertEqual(sorted(k for _, keys in self.ui.WRECK_GROUPS for k in keys), sorted(wp.SCHEMA))
         station_keys = [self.ui._prop_name(path) for path, _ in sp.iter_fields(sp.SCHEMA)]
         self.assertEqual(sorted(k for _, keys in self.ui.STATION_GROUPS for k in keys), sorted(station_keys))
+        from shipgen.fields import params as fp
+
+        self.assertEqual(sorted(k for _, keys in self.ui.FIELD_GROUPS for k in keys), sorted(fp.SCHEMA))
 
     def test_wreck_and_station_operators(self):
         scene = bpy.context.scene
@@ -102,7 +105,13 @@ class PanelTest(unittest.TestCase):
             bpy.ops.shipgen.station_export()
             bpy.ops.shipgen.station_kit()
             bpy.ops.shipgen.station_export()
+            scene.shipgen_field.count = 12
+            scene.shipgen_field.prefabs = 3
+            scene.shipgen_field.export_dir = tmp
+            bpy.ops.shipgen.field_generate()
+            bpy.ops.shipgen.field_export()
             files = sorted(os.listdir(tmp))
+        self.assertTrue(any(f.startswith("field_") and "_rock_" in f for f in files))
         self.assertIn("station_kit.glb", files)
         self.assertTrue(any(f.startswith("station_") and f.endswith(".glb") and f != "station_kit.glb" for f in files))
         self.assertTrue(any(f.startswith("wreck_") and f.endswith(".glb") for f in files))

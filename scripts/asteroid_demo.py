@@ -5,9 +5,11 @@
 types.png     composition (rows: ore, metal, ice) x shape (columns: round, elongated, binary)
 levels.png    one asteroid exploded level by level: whole, level 1, level 2, level 3
 scale.png     a 24 m ore asteroid next to the miner_m (26 m) at the same scale
+fields.png    the field presets from above: ore_belt, mixed_cluster, ice_ring
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -19,7 +21,7 @@ sys.path.insert(0, ROOT)
 import bpy  # noqa: E402,F401  (must come before bmesh)
 from mathutils import Vector  # noqa: E402
 
-from shipgen import asteroids, export, generator, params  # noqa: E402
+from shipgen import asteroids, export, fields, generator, params  # noqa: E402
 from shipgen.generator import Ship  # noqa: E402
 
 RES, SAMPLES = (480, 360), 16
@@ -91,6 +93,17 @@ def main():
     paths = [render(View(rock.parts + ship.parts), os.path.join(tmp, f"scale_{v}.png"), v)
              for v in ("three_quarter", "top")]
     sheet(os.path.join(args.out, "scale.png"), paths, 2)
+
+    # asteroid fields from above (the game's view): the field presets
+    generator.clear()
+    paths = []
+    for name in ("ore_belt", "mixed_cluster", "ice_ring"):
+        with open(os.path.join(ROOT, "presets", "fields", name + ".json"), encoding="utf-8") as f:
+            field = fields.generate(json.load(f))
+        print(name, field.stats["rocks"], field.stats["per_composition"], field.warnings)
+        paths.append(export.render_preview(field, os.path.join(tmp, f"field_{name}.png"), view="top",
+                                           resolution=(640, 640), samples=SAMPLES))
+    sheet(os.path.join(args.out, "fields.png"), paths, 3)
 
 
 if __name__ == "__main__":

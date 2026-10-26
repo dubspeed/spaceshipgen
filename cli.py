@@ -62,6 +62,8 @@ def build_parser() -> argparse.ArgumentParser:
                      help="asteroid preset name(s) in presets/asteroids/: 'ore_m', 'ore_m,ice_l' or 'all'")
     src.add_argument("--wreck", help="wreck preset name(s) in presets/wrecks/ (each names its ship preset) or 'all'")
     src.add_argument("--station", help="station preset name(s) in presets/stations/ or 'all'")
+    src.add_argument("--field", help="asteroid field preset name(s) in presets/fields/ or 'all' "
+                                     "(field .glb + one .glb per prefab rock + manifest in the .json)")
     src.add_argument("--station-kit", action="store_true",
                      help="every station module design, unassembled (style from --params, a station JSON)")
     ap.add_argument("--out", default=os.path.join(ROOT, "output"), help="output directory")
@@ -101,10 +103,11 @@ def load_jobs(args: argparse.Namespace) -> list[tuple[str, dict]]:
             return [(os.path.splitext(os.path.basename(args.params))[0], json.load(f))]
     if args.station_kit:
         return [("station_kit", {})]
-    sub = "asteroids" if args.asteroid else "wrecks" if args.wreck else "stations" if args.station else ""
+    sub = ("asteroids" if args.asteroid else "wrecks" if args.wreck else "stations" if args.station
+           else "fields" if args.field else "")
     folder = os.path.join(PRESET_DIR, sub)
-    names = [n.strip() for n in (args.asteroid or args.wreck or args.station or args.preset or "fighter").split(",")
-             if n.strip()]
+    names = [n.strip() for n in (args.asteroid or args.wreck or args.station or args.field or args.preset
+                                 or "fighter").split(",") if n.strip()]
     if names == ["all"]:
         names = sorted(os.path.splitext(n)[0] for n in os.listdir(folder) if n.endswith(".json"))
     jobs = []
@@ -117,7 +120,7 @@ def load_jobs(args: argparse.Namespace) -> list[tuple[str, dict]]:
 def run(args: argparse.Namespace) -> list[dict]:
     import bpy
 
-    from shipgen import asteroids, export, stations, wrecks
+    from shipgen import asteroids, export, fields, stations, wrecks
     from shipgen import generator as ship_generator
     from shipgen import params as ship_params
 
@@ -132,6 +135,8 @@ def run(args: argparse.Namespace) -> list[dict]:
                 return wrecks.generate(p, json.load(f))
     elif args.station:
         params, make = stations.params, stations.generate
+    elif args.field:
+        params, make = fields.params, fields.generate
     elif args.station_kit:
         params, make = stations.params, stations.build_kit
     else:
@@ -177,6 +182,10 @@ def run(args: argparse.Namespace) -> list[dict]:
                           "stats": result["stats"]}
                 if args.wreck:  # the ship it was
                     record.update(ship=ship_name, ship_params=ship.ship_params)
+                if args.field:  # every rock, in Godot axes, and the prefab files
+                    record["manifest"] = fields.manifest(ship, name)
+                    if not args.no_glb:
+                        files["prefabs"] = fields.export_prefabs(ship, args.out, name, atlas=not args.no_atlas)
                 json.dump(record, f, indent=2)
             print("SHIPGEN_RESULT " + json.dumps(result), flush=True)
             results.append(result)
