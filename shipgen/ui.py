@@ -435,7 +435,7 @@ class SHIPGEN_PT_wrecks(bpy.types.Panel):
 # ---------------------------------------------------------------- stations
 
 STATION_GROUPS = (
-    ("Layout", ("seed", "role", "size", "symmetry", "build")),
+    ("Layout", ("seed", "role", "size", "symmetry", "build", "spine")),
     ("Style", ("style__palette", "style__wear", "style__glow_color")),
 )
 

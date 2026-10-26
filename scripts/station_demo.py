@@ -5,6 +5,7 @@
 modules.png   every module design of the kit, one per tile
 stations.png  roles (rows: outpost, mining, trade) x sizes (columns: small, medium, large)
 stations_massive.png  the same with build = massive (3x3x3 cores, thick modules, heavy docks)
+stations_massive_top.png  large massive stations from above (flat spine, the game's view)
 docked.png    stations with shop ships lying at their berths (scale check; top truss, bottom massive)
 wrecks.png    wrecks of shop models (rows: miner_m, hauler_m, hauler_l; damage and breaks rise to the right)
 """
@@ -107,6 +108,12 @@ def main():
                     print(build, role, size, st.stats["berths"], st.stats["modules"])
                     paths.append(render(st, os.path.join(tmp, f"{build}_{role}_{size}.png")))
             sheet(os.path.join(args.out, out), paths, 3)
+            if build == "massive":  # flat: the game's top-down view
+                tops = []
+                for role in ("outpost", "mining", "trade"):
+                    st = stations.generate({"role": role, "size": "large", "seed": 3, "build": build})
+                    tops.append(render(st, os.path.join(tmp, f"top_{role}.png"), view="top"))
+                sheet(os.path.join(args.out, "stations_massive_top.png"), tops, 3)
 
     if "docked" in only:
         paths = []

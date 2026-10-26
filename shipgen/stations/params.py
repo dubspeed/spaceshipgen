@@ -11,6 +11,7 @@ ROLES = ("outpost", "mining", "trade")
 SIZES = ("small", "medium", "large")
 SYMMETRIES = ("two", "four")
 BUILDS = ("truss", "massive")
+SPINES = ("auto", "horizontal", "vertical")
 
 SCHEMA: dict[str, Any] = {
     "seed": Field(int, 1, 0, 2**31 - 1, description="Random seed: layout choices and module designs"),
@@ -19,6 +20,9 @@ SCHEMA: dict[str, Any] = {
     "symmetry": Field(str, "four", choices=SYMMETRIES, description="Arms per hub: two (opposite) or four"),
     "build": Field(str, "truss", choices=BUILDS,
                    description="truss = slim hubs and piers; massive = 48 m cores, thick halls, heavy docks"),
+    "spine": Field(str, "auto", choices=SPINES,
+                   description="Hubs/cores side by side (horizontal, flat for a top-down view) or stacked "
+                               "(vertical); auto = horizontal for massive, vertical for truss"),
     "style": {
         "palette": Field(str, "white_red", choices=PALETTES, description="Paint scheme (shared with the ships)"),
         "wear": Field(float, 0.3, 0.0, 1.0, description="Dull, rough paint"),

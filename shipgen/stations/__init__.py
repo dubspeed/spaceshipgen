@@ -248,21 +248,26 @@ def _layout(p) -> list[Placement]:
         return Placement(node, designs[node], Matrix.Identity(3),
                          Vector(port_cell) + direction - Vector(own), c)
 
+    flat = p["spine"] == "horizontal" or (p["spine"] == "auto" and massive)
+    axis = Vector((1, 0, 0)) if flat else up  # the spine: side by side (top-down view) or stacked
     first = Placement(node, designs[node], Matrix.Identity(3), Vector((0, 0, 0)), contract(node, designs[node]))
     lay.add(first)
     hubs = [first]
     for _ in range(HUBS[p["size"]] - 1):
         below = hubs[-1]
-        port = lay.port_towards(below, up)
-        core = lay.candidate(rng.choice(role["core"]), below, port, Vector((1, 0, 0)))
-        hub = node_at(core.ports()[1][1], up)
+        port = lay.port_towards(below, axis)
+        core = lay.candidate(rng.choice(role["core"]), below, port, up if flat else Vector((1, 0, 0)))
+        hub = node_at(core.ports()[1][1], axis)
         if not (lay.fits(core) and lay.fits(hub)):
             break
         lay.add(core, below, port)
         core.connected.add(1)
         lay.add(hub)
-        hub.connected.add(lay.port_towards(hub, -up))
+        hub.connected.add(lay.port_towards(hub, -axis))
         hubs.append(hub)
+    if flat:
+        _flat_arms(p, rng, role, lay, hubs, axis, up)
+        return lay.placed
     # arms: symmetric chains on every hub; the first hub always gets a dock
     turn = Matrix.Rotation(math.pi / 2, 3, "Z")
     base = Vector((1, 0, 0)) if rng.random() < 0.5 else Vector((0, 1, 0))
@@ -278,6 +283,24 @@ def _layout(p) -> list[Placement]:
     for hub, d, ends in ((hubs[-1], up, role["top"]), (hubs[0], -up, role["bottom"])):
         lay.chain([rng.choice(ends)], [(hub, d)], [Vector((1, 0, 0))])
     return lay.placed
+
+
+def _flat_arms(p, rng, role, lay, hubs, axis: Vector, up: Vector) -> None:
+    """Arms for a horizontal spine, all in the plane (berths flat, seen from above): a
+    symmetric pair across the spine on every node, every other one with docks; at the two ends of the
+    spine another pair of arms (``four``) or end modules (``two``); an antenna or command module
+    on top of the middle node."""
+    side = axis.cross(up)
+    for i, hub in enumerate(hubs):
+        recipe = rng.choice(role["docks"] if i % 2 == 0 else role["arms"])  # every other node docks
+        lay.chain(recipe, [(hub, side), (hub, -side)], [up, up])
+    ends = [(hubs[0], -axis), (hubs[-1], axis)]
+    if p["symmetry"] == "four":
+        lay.chain(rng.choice(role["arms"]), ends, [up, up])
+    else:
+        for (hub, d), pool in zip(ends, (role["bottom"], role["top"])):
+            lay.chain([rng.choice(pool)], [(hub, d)], [up])
+    lay.chain([rng.choice(role["top"])], [(hubs[len(hubs) // 2], up)], [axis])
 
 
 # ---------------------------------------------------------------- objects
@@ -422,6 +445,7 @@ def generate(raw_params: dict) -> Station:
     station = Station(root, parts, placements, p, list(result.warnings), colliders, empties)
     station.stats = _stats(parts, empties)
     root["shipgen_station"] = {"seed": p["seed"], "role": p["role"], "size": p["size"], "build": p["build"],
+                               "spine": p["spine"],
                                "grid_m": GRID,
                                "stats": station.stats}
     return station

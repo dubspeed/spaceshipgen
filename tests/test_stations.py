@@ -114,6 +114,27 @@ class StationTest(unittest.TestCase):
                          ["Hub_0", "Silo_0", "Hub_1", "Silo_1", "Silo_2", "DockL_0"])
         self.assertFalse(any(pl.kind in ("core", "hall", "smelter") for pl in st.placements))
 
+    def test_spine_orientation(self):
+        """Massive stations lie flat (cores side by side, docks in the plane: top-down view);
+        truss stations stack their hubs, unless asked otherwise."""
+        from mathutils import Vector
+
+        cases = (({"build": "massive"}, "core", "flat"), ({"build": "massive", "spine": "vertical"}, "core", "stack"),
+                 ({}, "hub", "stack"), ({"spine": "horizontal"}, "hub", "flat"))
+        for extra, node, shape in cases:
+            with self.subTest(**extra):
+                st = self.stations.generate({"seed": 5, "role": "trade", "size": "large", **extra})
+                nodes = [pl for pl in st.placements if pl.kind == node]
+                self.assertEqual(len(nodes), 3)
+                zs = {pl.origin.z for pl in nodes}
+                self.assertEqual(len(zs) == 1, shape == "flat")
+                if shape == "flat":  # berths in the plane of the nodes
+                    bpy.context.view_layer.update()
+                    for e in st.empties:
+                        if "station_berth" in e:
+                            up = e.matrix_world.to_3x3() @ Vector((0, 0, 1))
+                            self.assertGreater(up.z, 0.99, e.name)
+
     def test_deterministic(self):
         a = [(pl.kind, tuple(pl.origin)) for pl in self.stations.generate({"seed": 9, "size": "large"}).placements]
         b = [(pl.kind, tuple(pl.origin)) for pl in self.stations.generate({"seed": 9, "size": "large"}).placements]

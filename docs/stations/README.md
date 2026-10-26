@@ -78,8 +78,13 @@ Zeilen: Außenposten, Mining, Handel; Spalten: small, medium, large.
 
 ![Massive Stationen](stations_massive.png)
 
-Dasselbe Layout-Prinzip, aber mit 3 × 3 × 3-Kernen (48 m) statt Hubs, Modulen, die ihre Zellen
-füllen (Halle, Schmelzwerk, Quartiere, Schott), und schweren Andockarmen. Gleiches Raster und
+3 × 3 × 3-Kerne (48 m) statt Hubs, Module, die ihre Zellen füllen (Halle, Schmelzwerk,
+Quartiere, Schott), und schwere Andockarme. Die Kerne liegen **waagrecht nebeneinander**
+(`spine = auto` → horizontal), alle Arme und Liegeplätze in derselben Ebene – gemacht für die
+Draufsicht im Spiel: an jedem Kern ein Paar Arme quer zum Rückgrat (jeder zweite mit
+Andockarmen), an den beiden Enden ein weiteres Paar (`four`) oder Endmodule (`two`), oben auf
+dem mittleren Kern Antenne oder Kommando. `spine = horizontal` legt auch schlanke Stationen
+flach, `spine = vertical` stapelt auch massive. Gleiches Raster und
 gleiche Ports wie der schlanke Stil (`truss`, Standard) – beide Baukästen lassen sich mischen.
 Die schlanken Stationen bleiben für jeden Seed genau wie bisher (die massiven Module ziehen ihre
 Zufallszahlen aus einem eigenen Strom). Presets: `mining_m_massive`, `trade_l_massive`.
