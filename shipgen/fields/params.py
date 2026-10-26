@@ -13,9 +13,11 @@ SCHEMA: dict[str, Any] = {
     "seed": Field(int, 1, 0, 2**31 - 1, description="Random seed: placement, rocks, zones"),
     "shape": Field(str, "belt", choices=SHAPES,
                    description="belt = long band, cluster = clumped blob, ring = annulus around the centre"),
-    "size_m": Field(float, 500.0, 100.0, 20000.0, description="Extent of the field (belt length, cluster/ring diameter)"),
+    "size_m": Field(float, 500.0, 100.0, 20000.0,
+                    description="Extent of the field (belt length, cluster/ring diameter)"),
     "width": Field(float, 0.3, 0.05, 1.0, description="Belt / ring width relative to size_m"),
-    "thickness": Field(float, 0.06, 0.0, 0.5, description="Vertical spread relative to size_m (flat for a top-down view)"),
+    "thickness": Field(float, 0.06, 0.0, 0.5,
+                       description="Vertical spread relative to size_m (flat for a top-down view)"),
     "count": Field(int, 80, 1, 2000, description="Asteroids in the field"),
     "prefabs": Field(int, 9, 1, 40, description="Unique rocks the field is built from (each has its own .glb)"),
     "min_size_m": Field(float, 6.0, 3.0, 400.0, description="Smallest rock"),
@@ -25,7 +27,8 @@ SCHEMA: dict[str, Any] = {
     "metal": Field(float, 0.25, 0.0, 1.0, description="Share of metal rocks"),
     "ice": Field(float, 0.15, 0.0, 1.0, description="Share of ice rocks"),
     "zoned": Field(float, 0.6, 0.0, 1.0,
-                   description="0 = compositions mixed everywhere, 1 = separate zones (ore at one end, ice at the other)"),
+                   description="0 = compositions mixed everywhere, "
+                               "1 = separate zones (ore at one end, ice at the other)"),
     "clumping": Field(float, 0.4, 0.0, 1.0, description="0 = spread evenly, 1 = rocks gather in clumps"),
     "gap_m": Field(float, 4.0, 0.0, 100.0, description="Free space between neighbouring rocks"),
 }

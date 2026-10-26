@@ -267,7 +267,8 @@ def _stats(p, f: AsteroidField) -> dict:
         "mass_t": round(mass, 1),
         "extent_m": [round(c, 1) for c in hi - lo],
         "prefabs": {pf.name: {"composition": pf.composition, "size_m": pf.stats["size_m"],
-                              "yield_m3": pf.stats["yield_m3"], "uses": sum(1 for pl in f.placements if pl.prefab is pf)}
+                              "yield_m3": pf.stats["yield_m3"],
+                              "uses": sum(1 for pl in f.placements if pl.prefab is pf)}
                     for pf in f.prefabs},
     }
 
