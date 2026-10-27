@@ -27,7 +27,7 @@ import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
-from .. import decals, fx, meshutil
+from .. import decals, fx, meshutil, version
 from ..generator import Ship
 from ..generator import clear as _clear
 from ..generator.materials import _principled, create_materials
@@ -421,6 +421,7 @@ def _new_collection(root_name: str):
     root = bpy.data.objects.new(root_name, None)
     root.empty_display_type = "ARROWS"
     root.empty_display_size = GRID
+    version.stamp(root)
     coll.objects.link(root)
     return coll, root
 

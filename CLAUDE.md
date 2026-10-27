@@ -174,7 +174,10 @@ same class, mining and cargo type share the seed streams).
   face textured, background = the paint underneath (no alpha); ship decals are projected on the
   starboard flank and mirrored (exact symmetry), greebles keep off them.
 - The export format (node names, extras, materials, asteroid levels) is specified for importer
-  authors in `docs/export_format.md`: update it whenever the .glb/.json structure changes.
+  authors in `docs/export_format.md`: update it whenever the .glb/.json structure changes, and
+  bump `version` in `shipgen/blender_manifest.toml` - the one version number: `shipgen/version.py`
+  reads it and stamps every root (`version.stamp`) and every written .json (`version.tagged`)
+  with `format_version` (`RootVersionTest`).
 - `output/` and `dist/` are git-ignored. Commit presets and, occasionally, the docs sheets
   (`scripts/render_docs.py` regenerates all of them).
 

@@ -26,7 +26,7 @@ import bmesh
 import bpy
 from mathutils import Euler, Matrix, Vector
 
-from .. import asteroids
+from .. import asteroids, version
 from ..asteroids import geometry as geo
 from ..generator import Ship
 from ..generator import clear as _clear
@@ -131,6 +131,7 @@ def generate(raw_params: dict) -> AsteroidField:
         colliders.append(col)
     f = AsteroidField(root, parts, [pf for pf in prefabs if pf.index in used], placements, p, warnings, colliders)
     f.stats = _stats(p, f)
+    version.stamp(root)
     root["shipgen_field"] = {"seed": p["seed"], "shape": p["shape"],
                              "prefabs": [pf.name for pf in f.prefabs], "stats": f.stats}
     return f
@@ -289,7 +290,7 @@ def manifest(f: AsteroidField, name: str) -> dict:
         rocks.append({"name": obj.name, "prefab": pl.prefab.name, "file": f"{name}_{pl.prefab.name}.glb",
                       "position": pos, "rotation": rot, "composition": pl.prefab.composition,
                       "zone": round(pl.zone, 3)})
-    return {"axes": "godot", "params": f.params, "stats": f.stats,
+    return {"format_version": version.FORMAT_VERSION, "axes": "godot", "params": f.params, "stats": f.stats,
             "prefabs": {pf.name: {"file": f"{name}_{pf.name}.glb", "asteroid_params": pf.params}
                         for pf in f.prefabs},
             "rocks": rocks}

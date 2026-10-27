@@ -30,7 +30,7 @@ import bmesh
 import bpy
 from mathutils import Euler, Vector
 
-from .. import fx
+from .. import fx, version
 from ..generator import Ship
 from ..generator import clear as _clear
 from ..generator.materials import MATERIAL_PREFIX
@@ -267,6 +267,7 @@ def _build_objects(p, tree: list[Chunk], fractures, surf, collection: str = COLL
     fx_objects = _ice_vents(p, tree, coll) if p["composition"] == "ice" else []
     rock = Asteroid(root=root, parts=[c.obj for c in tree], chunks=chunks, params=p, fx_objects=fx_objects)
     rock.stats = _stats(p, tree, chunks)
+    version.stamp(root)
     root["shipgen_asteroid"] = {"seed": p["seed"], "composition": p["composition"], "shape": p["shape"],
                                 "stats": rock.stats}
     return rock

@@ -13,6 +13,7 @@ from mathutils import Vector
 
 from .. import params as params_mod
 from .. import stats as stats_mod
+from .. import version
 from . import cargo, engines, hull, materials, mining, wings
 
 COLLECTION_NAME = "ShipGen"
@@ -164,6 +165,7 @@ def generate(raw_params: dict, collection_name: str = COLLECTION_NAME) -> Ship:
     ship = Ship(root=root, parts=parts, params=p, warnings=warnings)
     ship.gameplay = stats_mod.compute(ship, shape)
     # exported as glTF extras on the root node (Godot imports them as node metadata)
+    version.stamp(root)
     root["shipgen"] = {"seed": p["seed"], "class": p["class"], "stats": ship.gameplay}
     return ship
 

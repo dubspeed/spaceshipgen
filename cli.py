@@ -120,7 +120,7 @@ def load_jobs(args: argparse.Namespace) -> list[tuple[str, dict]]:
 def run(args: argparse.Namespace) -> list[dict]:
     import bpy
 
-    from shipgen import asteroids, export, fields, stations, wrecks
+    from shipgen import asteroids, export, fields, stations, version, wrecks
     from shipgen import generator as ship_generator
     from shipgen import params as ship_params
 
@@ -186,7 +186,7 @@ def run(args: argparse.Namespace) -> list[dict]:
                     record["manifest"] = fields.manifest(ship, name)
                     if not args.no_glb:
                         files["prefabs"] = fields.export_prefabs(ship, args.out, name, atlas=not args.no_atlas)
-                json.dump(record, f, indent=2)
+                json.dump(version.tagged(record), f, indent=2)
             print("SHIPGEN_RESULT " + json.dumps(result), flush=True)
             results.append(result)
     return results

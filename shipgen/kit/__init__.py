@@ -18,7 +18,7 @@ import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
-from .. import decals, fx, meshutil
+from .. import decals, fx, meshutil, version
 from .. import params as params_mod
 from .. import stats
 from ..generator import Ship, clear, materials, shapes, wings
@@ -333,6 +333,7 @@ def _build_once(p, cls, stream, design, engine_design, rig_design, module_design
     ref_bm.free()
     ship.gameplay = _normalized_stats(ship, _StatsHull(length, CLASS_PROFILES[cls], nose_y), engine_design,
                                       rig_design, module_design, reference_hull)
+    version.stamp(root)
     root["shipgen"] = {"seed": p["seed"], "class": p["class"], "design": design.label(), **loadout,
                        "stats": ship.gameplay}
     return ship

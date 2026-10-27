@@ -13,7 +13,7 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, FloatVectorProperty, IntProperty, StringProperty
 from bpy_extras.io_utils import ImportHelper
 
-from . import asteroids, export, fields, generator, params, stations, wrecks
+from . import asteroids, export, fields, generator, params, stations, version, wrecks
 from .asteroids import params as asteroid_params
 from .fields import params as field_params
 from .stations import params as station_params
@@ -141,7 +141,8 @@ class SHIPGEN_OT_copy_params(bpy.types.Operator):
     bl_description = "Copy the current parameters as JSON to the clipboard"
 
     def execute(self, context):
-        context.window_manager.clipboard = json.dumps(props_to_params(context.scene.shipgen), indent=2)
+        p = version.tagged(props_to_params(context.scene.shipgen))
+        context.window_manager.clipboard = json.dumps(p, indent=2)
         self.report({"INFO"}, "Parameters copied to clipboard")
         return {"FINISHED"}
 
@@ -163,7 +164,7 @@ class SHIPGEN_OT_export(bpy.types.Operator):
         name = f"{p['class']}_{p['seed']}"
         path = export.export_glb(ship, os.path.join(out_dir, name + ".glb"))
         with open(os.path.join(out_dir, name + ".json"), "w", encoding="utf-8") as f:
-            json.dump(p, f, indent=2)
+            json.dump(version.tagged(p), f, indent=2)
         self.report({"INFO"}, f"Exported {path}")
         return {"FINISHED"}
 
@@ -291,7 +292,7 @@ class SHIPGEN_OT_asteroid_export(bpy.types.Operator):
         name = f"asteroid_{p['composition']}_{p['seed']}"
         path = export.export_glb(rock, os.path.join(out_dir, name + ".glb"))
         with open(os.path.join(out_dir, name + ".json"), "w", encoding="utf-8") as f:
-            json.dump({"params": p, "stats": rock.stats}, f, indent=2)
+            json.dump(version.tagged({"params": p, "stats": rock.stats}), f, indent=2)
         self.report({"INFO"}, f"Exported {path}")
         return {"FINISHED"}
 
@@ -392,7 +393,8 @@ class SHIPGEN_OT_wreck_export(bpy.types.Operator):
         name = f"wreck_{wreck.ship_params['class']}_{wreck.ship_params['seed']}_{p['seed']}"
         path = export.export_glb(wreck, os.path.join(out_dir, name + ".glb"))
         with open(os.path.join(out_dir, name + ".json"), "w", encoding="utf-8") as f:
-            json.dump({"params": p, "ship_params": wreck.ship_params, "stats": wreck.stats}, f, indent=2)
+            json.dump(version.tagged({"params": p, "ship_params": wreck.ship_params, "stats": wreck.stats}), f,
+                      indent=2)
         self.report({"INFO"}, f"Exported {path}")
         return {"FINISHED"}
 
@@ -494,7 +496,7 @@ class SHIPGEN_OT_station_export(bpy.types.Operator):
         out_dir = bpy.path.abspath(props.export_dir)
         path = export.export_glb(built, os.path.join(out_dir, name + ".glb"))
         with open(os.path.join(out_dir, name + ".json"), "w", encoding="utf-8") as f:
-            json.dump({"params": p, "stats": built.stats}, f, indent=2)
+            json.dump(version.tagged({"params": p, "stats": built.stats}), f, indent=2)
         self.report({"INFO"}, f"Exported {path}")
         return {"FINISHED"}
 
@@ -587,7 +589,8 @@ class SHIPGEN_OT_field_export(bpy.types.Operator):
         path = export.export_glb(f, os.path.join(out_dir, name + ".glb"))
         fields.export_prefabs(f, out_dir, name)
         with open(os.path.join(out_dir, name + ".json"), "w", encoding="utf-8") as fh:
-            json.dump({"params": p, "stats": f.stats, "manifest": fields.manifest(f, name)}, fh, indent=2)
+            json.dump(version.tagged({"params": p, "stats": f.stats, "manifest": fields.manifest(f, name)}), fh,
+                      indent=2)
         self.report({"INFO"}, f"Exported {path} and {len(f.prefabs)} prefab rocks")
         return {"FINISHED"}
 

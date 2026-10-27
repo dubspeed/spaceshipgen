@@ -107,7 +107,11 @@ class CliTest(unittest.TestCase):
                                          "--no-render", "--no-blend", "--out", out)
             self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
             with open(os.path.join(out, "mixed_cluster_5.json")) as f:
-                man = json.load(f)["manifest"]
+                record = json.load(f)
+            from shipgen import version
+
+            self.assertEqual(record["format_version"], version.FORMAT_VERSION)
+            man = record["manifest"]
             self.assertEqual(len(man["rocks"]), 15)
             for rock in man["rocks"]:  # every prefab file the manifest names exists
                 self.assertTrue(os.path.isfile(os.path.join(out, rock["file"])), rock["file"])

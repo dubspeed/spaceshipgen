@@ -83,6 +83,18 @@ Der Exporter schreibt Blender-Custom-Properties als glTF-`extras` an die Knoten.
 Engine sie als Node-Metadaten übernimmt, hängt von Engine/Version ab; die `.json`-Datei
 enthält die Gesamtwerte in jedem Fall.
 
+### Formatversion
+
+- Jeder Wurzelknoten (`Ship`, `Wreck`, `Asteroid`, `AsteroidField`, `Station`, `StationKit`)
+  trägt `extras.format_version`, z. B. `"0.6.0"`; die Prefab-Asteroiden eines Feldes ebenso.
+- Jede geschriebene `.json` (Kommandozeile und Panel-Export, auch die Parameter-Datei eines
+  Schiffs) beginnt mit `"format_version"`; das Feld-`manifest` trägt sie zusätzlich.
+- Quelle ist eine einzige Nummer: die Version der Extension (`shipgen/blender_manifest.toml`,
+  gelesen von `shipgen/version.py`). Sie steigt, sobald sich die Struktur von `.glb`/`.json`
+  ändert – ein Importer kann so ältere Dateien erkennen.
+- Parameter-Dateien mit `format_version` lassen sich wieder laden (der Schlüssel wird beim
+  Einlesen übersprungen).
+
 ---
 
 ## 2. Schiffe
@@ -561,6 +573,7 @@ Godot-Hilfsskript: [`godot/shipgen_fx.gd`](../godot/shipgen_fx.gd) (`ShipGenFx.a
 
 ## 7. Checkliste für einen Importer
 
+- [ ] `format_version` (Wurzel-Extras / `.json`) prüfen.
 - [ ] Achsen übernehmen (glTF = Godot), keine Umrechnung nötig.
 - [ ] Knoten mit Suffix `-convcolonly` als konvexe Collision-Shapes behandeln, nicht rendern.
 - [ ] Ein Material `ShipGen_Atlas` übernehmen, Texturfilter „Nearest“; nur mit `--no-atlas`
@@ -578,6 +591,7 @@ Godot-Hilfsskript: [`godot/shipgen_fx.gd`](../godot/shipgen_fx.gd) (`ShipGenFx.a
 - [ ] Station: Module über `station_module` erkennen; Schiffe an `*_Berth_*` andocken;
       eigene Stationen aus dem Baukasten über Ports auf dem 16-m-Raster zusammensetzen.
 
-Das Format hat derzeit kein eigenes Versionsfeld; maßgeblich ist die Version der Extension
-(`shipgen/blender_manifest.toml`). Ältere Exporte (bis 0.2.0) hatten statt einzelner Teile
-ein Mesh pro Rolle (`Ship_Engines`, `Ship_Mining`, `Ship_Cargo`, `Ship_Wings`).
+Versionsstand: `format_version` an der Wurzel bzw. in der `.json` (ab 0.6.0; Dateien ohne das
+Feld sind älter). Ältere Exporte (bis 0.2.0) hatten statt einzelner Teile ein Mesh pro Rolle
+(`Ship_Engines`, `Ship_Mining`, `Ship_Cargo`, `Ship_Wings`); bis 0.4.0 ein Material pro Farbe
+statt des Atlas.

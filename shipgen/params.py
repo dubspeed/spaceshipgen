@@ -18,6 +18,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from .version import META_KEYS
+
 SHIP_CLASSES = ("fighter", "interceptor", "freighter", "miner", "corvette", "shuttle")
 WING_TYPES = ("none", "delta", "swept", "straight", "forward_swept")
 MINING_TYPES = ("none", "drill", "laser", "claw", "scoop")
@@ -194,7 +196,7 @@ def _validate(data: Any, schema: dict, prefix: str, warnings: list[str]) -> dict
         else:
             out[key] = copy.deepcopy(spec.default)
     for key in data:
-        if key not in schema:
+        if key not in schema and not (prefix == "" and key in META_KEYS):
             path = f"{prefix}.{key}" if prefix else key
             warnings.append(f"{path}: unknown parameter ignored")
     return out
